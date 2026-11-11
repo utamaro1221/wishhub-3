@@ -429,28 +429,39 @@ async function checkSafeBrowsing(
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => null);
-    const rawUrl = body?.url;
+    const rawUrl = body?.url ?? body?.productUrl ?? body?.product_url ?? "";
 
     if (!rawUrl || typeof rawUrl !== "string" || !rawUrl.trim()) {
       return NextResponse.json(
-        { error: "URLが空または不正です。" },
-        { status: 400 }
+        {
+          title: "",
+          imageUrl: "",
+          siteName: "",
+          productUrl: "",
+          price: null,
+        },
+        { status: 200 }
       );
+    }
+
+    let trimmed = rawUrl.trim();
+    if (!/^https?:\/\//i.test(trimmed)) {
+      trimmed = "https://" + trimmed;
     }
 
     let parsedUrl: URL;
     try {
-      parsedUrl = new URL(rawUrl.trim());
-      if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
-        return NextResponse.json(
-          { error: "URLの形式が不正です。httpまたはhttpsから始まるURLを入力してください。" },
-          { status: 400 }
-        );
-      }
+      parsedUrl = new URL(trimmed);
     } catch {
       return NextResponse.json(
-        { error: "URLの形式が不正です。" },
-        { status: 400 }
+        {
+          title: "",
+          imageUrl: "",
+          siteName: "",
+          productUrl: rawUrl.trim(),
+          price: null,
+        },
+        { status: 200 }
       );
     }
 

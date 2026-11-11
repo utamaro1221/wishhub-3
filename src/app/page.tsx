@@ -138,7 +138,6 @@ export default function Home() {
       const { data, error } = await supabase
         .from("wish_items")
         .select("*")
-        .eq("list_id", targetToken)
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -147,20 +146,25 @@ export default function Home() {
       }
 
       if (data) {
-        const mapped: WishItem[] = data.map((d: any) => ({
-          id: d.id,
-          listId: d.list_id || targetToken,
-          title: d.title || "",
-          imageUrl: d.image_url || "",
-          siteName: d.site_name || "",
-          productUrl: d.product_url || "",
-          price: d.price ?? null,
-          priority: d.priority ?? 3,
-          memo: d.memo || "",
-          category: d.category || "その他",
-          isPurchased: Boolean(d.is_purchased),
-          reactions: d.reactions || 0,
-        }));
+        const mapped: WishItem[] = data
+          .filter((d: any) => {
+            const listId = d.list_id || myToken;
+            return listId === targetToken;
+          })
+          .map((d: any) => ({
+            id: d.id,
+            listId: d.list_id || targetToken,
+            title: d.title || "",
+            imageUrl: d.image_url || "",
+            siteName: d.site_name || "",
+            productUrl: d.product_url || "",
+            price: d.price ?? null,
+            priority: d.priority ?? 3,
+            memo: d.memo || "",
+            category: d.category || "その他",
+            isPurchased: Boolean(d.is_purchased),
+            reactions: d.reactions || 0,
+          }));
 
         setItems((prev) => {
           const others = prev.filter(

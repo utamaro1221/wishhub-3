@@ -132,6 +132,55 @@ export default function Home() {
     return `${Math.floor(diff / 86400)}日前`;
   };
 
+  const syncListNameToSupabase = async (token: string, name: string) => {
+    if (!token || !name) return;
+    try {
+      const { data: existingMeta, error: selectError } = await supabase
+        .from("wish_items")
+        .select("id")
+        .eq("list_id", token)
+        .in("category", ["__LIST_META__", "__list_meta__"])
+        .maybeSingle();
+
+      if (selectError) {
+        console.error("メタ取得エラー:", selectError.message);
+      }
+
+      if (existingMeta?.id) {
+        const { error: updateError } = await supabase
+          .from("wish_items")
+          .update({
+            title: name,
+            memo: name,
+            price: 0,
+            category: "__LIST_META__",
+          })
+          .eq("id", existingMeta.id);
+        if (updateError) {
+          console.error("メタ更新エラー:", updateError.message);
+        }
+      } else {
+        const { error: insertError } = await supabase.from("wish_items").insert({
+          list_id: token,
+          title: name,
+          image_url: "",
+          site_name: "",
+          product_url: "",
+          price: 0,
+          priority: 0,
+          memo: name,
+          category: "__LIST_META__",
+          is_purchased: false,
+        });
+        if (insertError) {
+          console.error("メタ挿入エラー:", insertError.message);
+        }
+      }
+    } catch (err) {
+      console.error("メタ同期例外:", err);
+    }
+  };
+
   const fetchListItems = async (targetToken: string) => {
     if (!targetToken) return;
     try {
@@ -146,10 +195,85 @@ export default function Home() {
       }
 
       if (data) {
+        const currentLocalToken = localStorage.getItem(STORAGE_KEY_TOKEN) || myToken;
+        const metaMap = new Map<string, string>();
+        data.forEach((d: any) => {
+          if (
+            (d.category === "__LIST_META__" || d.category === "__list_meta__") &&
+            d.list_id &&
+            d.title
+          ) {
+            metaMap.set(d.list_id, d.title);
+          }
+        });
+
+        if (metaMap.has(currentLocalToken)) {
+          const syncedMyName = metaMap.get(currentLocalToken)!;
+          if (syncedMyName && syncedMyName !== myListName) {
+            setMyListName(syncedMyName);
+            try {
+              localStorage.setItem(STORAGE_KEY_NAME, syncedMyName);
+            } catch {}
+          }
+        }
+
+        if (metaMap.size > 0) {
+          setJoinedLists((prev) => {
+            let changed = false;
+            let updated = prev.map((l) => {
+              const remoteName = metaMap.get(l.token);
+              if (remoteName && remoteName !== l.name) {
+                changed = true;
+                return { ...l, name: remoteName };
+              }
+              return l;
+            });
+            if (
+              targetToken !== currentLocalToken &&
+              metaMap.has(targetToken) &&
+              !prev.some((l) => l.token === targetToken)
+            ) {
+              const newList: ListInfo = {
+                token: targetToken,
+                name: metaMap.get(targetToken)!,
+                lastUpdated: Date.now(),
+                isOwner: false,
+                reactionCount: 1,
+              };
+              updated = [newList, ...updated];
+              changed = true;
+            }
+            if (changed) {
+              try {
+                localStorage.setItem(STORAGE_KEY_JOINED, JSON.stringify(updated));
+              } catch {}
+            }
+            return changed ? updated : prev;
+          });
+        }
+
+        const activeTokenName =
+          targetToken === currentLocalToken
+            ? metaMap.get(currentLocalToken) || myListName
+            : metaMap.get(targetToken);
+
+        if (activeTokenName) {
+          try {
+            const url = new URL(window.location.href);
+            if (url.searchParams.get("name") !== activeTokenName) {
+              url.searchParams.set("share", targetToken);
+              url.searchParams.set("name", activeTokenName);
+              window.history.replaceState({}, "", url.toString());
+            }
+          } catch {}
+        }
+
         const mapped: WishItem[] = data
           .filter((d: any) => {
-            const listId = d.list_id || myToken;
-            return listId === targetToken;
+            const listId = d.list_id || targetToken;
+            const isMeta =
+              d.category === "__LIST_META__" || d.category === "__list_meta__";
+            return listId === targetToken && !isMeta;
           })
           .map((d: any) => ({
             id: d.id,
@@ -168,7 +292,7 @@ export default function Home() {
 
         setItems((prev) => {
           const others = prev.filter(
-            (item) => (item.listId || myToken) !== targetToken
+            (item) => (item.listId || targetToken) !== targetToken
           );
           return [...mapped, ...others];
         });
@@ -219,10 +343,13 @@ export default function Home() {
       const decodedShareName = nameParam
         ? decodeURIComponent(nameParam)
         : "友達のログ";
-      const existing = joined.find((l) => l.token === shareParam);
-      if (existing) {
+      const existingIndex = joined.findIndex((l) => l.token === shareParam);
+      if (existingIndex >= 0) {
         if (nameParam) {
-          existing.name = decodedShareName;
+          joined[existingIndex] = {
+            ...joined[existingIndex],
+            name: decodedShareName,
+          };
           localStorage.setItem(STORAGE_KEY_JOINED, JSON.stringify(joined));
         }
       } else {
@@ -248,12 +375,18 @@ export default function Home() {
         const parsed = JSON.parse(storedItems);
         if (Array.isArray(parsed)) {
           setItems(
-            parsed.map((item) => ({
-              ...item,
-              listId: item.listId || token,
-              category: item.category || "その他",
-              reactions: item.reactions || 0,
-            }))
+            parsed
+              .filter(
+                (item) =>
+                  item.category !== "__LIST_META__" &&
+                  item.category !== "__list_meta__"
+              )
+              .map((item) => ({
+                ...item,
+                listId: item.listId || token,
+                category: item.category || "その他",
+                reactions: item.reactions || 0,
+              }))
           );
         }
       } catch {}
@@ -278,7 +411,16 @@ export default function Home() {
         },
         (payload: any) => {
           const rec = payload.new || payload.old;
-          if (!rec || !rec.list_id || rec.list_id === activeListToken) {
+          const isMeta =
+            rec &&
+            (rec.category === "__LIST_META__" ||
+              rec.category === "__list_meta__");
+          if (
+            !rec ||
+            !rec.list_id ||
+            rec.list_id === activeListToken ||
+            isMeta
+          ) {
             fetchListItems(activeListToken);
           }
         }
@@ -307,10 +449,15 @@ export default function Home() {
 
   const activeItems = useMemo(() => {
     const currentToken = activeListToken || myToken;
-    return items.filter((i) => (i.listId || myToken) === currentToken);
+    return items.filter(
+      (i) =>
+        (i.listId || myToken) === currentToken &&
+        i.category !== "__LIST_META__" &&
+        i.category !== "__list_meta__"
+    );
   }, [items, activeListToken, myToken]);
 
-  const handleSaveMyName = () => {
+  const handleSaveMyName = async () => {
     if (!tempMyName.trim()) return;
     const newName = tempMyName.trim();
     setMyListName(newName);
@@ -323,6 +470,8 @@ export default function Home() {
       url.searchParams.set("name", newName);
       window.history.replaceState({}, "", url.toString());
     } catch {}
+
+    await syncListNameToSupabase(myToken, newName);
   };
 
   const handleCopyMyShareUrl = () => {
@@ -336,6 +485,10 @@ export default function Home() {
     navigator.clipboard.writeText(shareUrl);
     setCopiedShareUrl(true);
     setTimeout(() => setCopiedShareUrl(false), 2000);
+
+    if (isOwnerActive) {
+      syncListNameToSupabase(myToken, currentListName);
+    }
   };
 
   const handleJoinList = () => {
@@ -350,7 +503,7 @@ export default function Home() {
         const pName = urlObj.searchParams.get("name");
         if (pShare) {
           token = pShare;
-          if (pName) name = pName;
+          if (pName) name = decodeURIComponent(pName);
         }
       }
     } catch {}
@@ -363,8 +516,15 @@ export default function Home() {
       return;
     }
 
-    const existing = joinedLists.find((l) => l.token === token);
-    if (!existing) {
+    const existingIndex = joinedLists.findIndex((l) => l.token === token);
+    if (existingIndex >= 0) {
+      const updated = [...joinedLists];
+      if (name && name !== "友達のログ") {
+        updated[existingIndex] = { ...updated[existingIndex], name };
+      }
+      setJoinedLists(updated);
+      localStorage.setItem(STORAGE_KEY_JOINED, JSON.stringify(updated));
+    } else {
       const newList: ListInfo = {
         token,
         name,
@@ -693,6 +853,9 @@ export default function Home() {
       setMyListLastUpdated(Date.now());
       setInputUrl("");
       setErrorMessage("");
+      if (isOwnerActive) {
+        syncListNameToSupabase(currentToken, currentListName);
+      }
     }
 
     setInputUrl("");
@@ -780,11 +943,15 @@ export default function Home() {
   }, [activeItems, filter, selectedCategory, sort]);
 
   const stats = useMemo(() => {
-    const total = activeItems.reduce((sum, item) => sum + (item.price ?? 0), 0);
-    const unpurchasedTotal = activeItems
+    const validItems = activeItems.filter(
+      (i) =>
+        i.category !== "__LIST_META__" && i.category !== "__list_meta__"
+    );
+    const total = validItems.reduce((sum, item) => sum + (item.price ?? 0), 0);
+    const unpurchasedTotal = validItems
       .filter((i) => !i.isPurchased)
       .reduce((sum, item) => sum + (item.price ?? 0), 0);
-    const unpurchasedCount = activeItems.filter((i) => !i.isPurchased).length;
+    const unpurchasedCount = validItems.filter((i) => !i.isPurchased).length;
     return { total, unpurchasedTotal, unpurchasedCount };
   }, [activeItems]);
 
@@ -838,6 +1005,12 @@ export default function Home() {
               onClick={() => {
                 setActiveListToken(myToken);
                 setMobileTab("list");
+                try {
+                  const url = new URL(window.location.href);
+                  url.searchParams.set("share", myToken);
+                  url.searchParams.set("name", myListName);
+                  window.history.replaceState({}, "", url.toString());
+                } catch {}
               }}
               className={`p-3.5 rounded-3xl border transition cursor-pointer flex items-center justify-between group ${
                 activeListToken === myToken
@@ -897,6 +1070,12 @@ export default function Home() {
                   onClick={() => {
                     setActiveListToken(list.token);
                     setMobileTab("list");
+                    try {
+                      const url = new URL(window.location.href);
+                      url.searchParams.set("share", list.token);
+                      url.searchParams.set("name", list.name);
+                      window.history.replaceState({}, "", url.toString());
+                    } catch {}
                   }}
                   className={`p-3.5 rounded-3xl border transition cursor-pointer flex items-center justify-between group ${
                     isSelected

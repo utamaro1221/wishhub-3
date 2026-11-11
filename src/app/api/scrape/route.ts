@@ -231,11 +231,25 @@ function resolveUrl(urlStr: string, parsedUrl: URL): string {
 
 function extractImageUrl($: cheerio.CheerioAPI, parsedUrl: URL): string {
   const ogImage = $('meta[property="og:image"]').attr("content")?.trim();
-  if (ogImage) {
+  if (
+    ogImage &&
+    !ogImage.includes("captcha") &&
+    !ogImage.includes("placeholder")
+  ) {
     return resolveUrl(ogImage, parsedUrl);
   }
 
-  const amazonSelectors = ["#landingImage", "#imgBlkFront"];
+  const amazonSelectors = [
+    "#landingImage",
+    "img#landingImage",
+    "[id*='landingImage']",
+    "#imgBlkFront",
+    "#main-image",
+    "img#mainImage",
+    "#mainImage",
+    "#ebooks-img-canvas img",
+    "#main-image-container img",
+  ];
   for (const sel of amazonSelectors) {
     const el = $(sel).first();
     if (!el.length) continue;
@@ -262,12 +276,37 @@ function extractImageUrl($: cheerio.CheerioAPI, parsedUrl: URL): string {
     }
   }
 
+  const dynamicImg = $("img[data-a-dynamic-image]").first();
+  if (dynamicImg.length) {
+    const raw = dynamicImg.attr("data-a-dynamic-image")?.trim();
+    if (raw) {
+      try {
+        const map = JSON.parse(raw);
+        const keys = Object.keys(map);
+        if (keys.length > 0 && keys[0].trim()) {
+          return resolveUrl(keys[0].trim(), parsedUrl);
+        }
+      } catch {}
+    }
+  }
+
+  const oldHiresImg = $("img[data-old-hires]").first();
+  if (oldHiresImg.length) {
+    const hires = oldHiresImg.attr("data-old-hires")?.trim();
+    if (hires) {
+      return resolveUrl(hires, parsedUrl);
+    }
+  }
+
+  const twitterImage = $('meta[name="twitter:image"]').attr("content")?.trim();
+  if (twitterImage) {
+    return resolveUrl(twitterImage, parsedUrl);
+  }
+
   const genericSelectors = [
-    "#main-image",
-    "img#mainImage",
     ".product-image img",
     ".main-image img",
-    "#mainImage",
+    "article img",
   ];
 
   for (const sel of genericSelectors) {
@@ -431,62 +470,100 @@ export async function POST(request: NextRequest) {
     }
 
     const isAmazon = /amazon\.(co\.jp|com)/i.test(parsedUrl.hostname);
+    const inferredSiteName = parsedUrl.hostname.replace(/^www\./i, "");
 
-    const response = await fetch(parsedUrl.toString(), {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-        "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Cache-Control": "max-age=0",
-        "Sec-Ch-Ua":
-          '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-        "Sec-Ch-Ua-Mobile": "?0",
-        "Sec-Ch-Ua-Platform": '"Windows"',
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "same-origin",
-        "Sec-Fetch-User": "?1",
-        "Upgrade-Insecure-Requests": "1",
-        Referer: "https://www.google.co.jp/",
-      },
-    });
-
-    if (!response.ok) {
+    let response: Response;
+    try {
+      response = await fetch(parsedUrl.toString(), {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          Accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+          "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+          "Accept-Encoding": "gzip, deflate, br",
+          "Cache-Control": "max-age=0",
+          "Sec-Ch-Ua":
+            '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+          "Sec-Ch-Ua-Mobile": "?0",
+          "Sec-Ch-Ua-Platform": '"Windows"',
+          "Sec-Fetch-Dest": "document",
+          "Sec-Fetch-Mode": "navigate",
+          "Sec-Fetch-Site": "same-origin",
+          "Sec-Fetch-User": "?1",
+          "Upgrade-Insecure-Requests": "1",
+          Referer: "https://www.google.co.jp/",
+        },
+      });
+    } catch {
       return NextResponse.json(
-        { error: `ページの取得に失敗しました (Status: ${response.status})` },
-        { status: 500 }
+        {
+          title: inferredSiteName,
+          imageUrl: "",
+          siteName: inferredSiteName,
+          productUrl: parsedUrl.toString(),
+          price: null,
+        },
+        { status: 200 }
       );
     }
 
-    const arrayBuffer = await response.arrayBuffer();
-    const contentTypeHeader = response.headers.get("content-type");
-    const html = decodeHtml(arrayBuffer, contentTypeHeader);
-    const $ = cheerio.load(html);
+    if (!response.ok) {
+      return NextResponse.json(
+        {
+          title: inferredSiteName,
+          imageUrl: "",
+          siteName: inferredSiteName,
+          productUrl: parsedUrl.toString(),
+          price: null,
+        },
+        { status: 200 }
+      );
+    }
 
-    const title = extractTitle($, isAmazon);
-    const imageUrl = extractImageUrl($, parsedUrl);
+    try {
+      const arrayBuffer = await response.arrayBuffer();
+      const contentTypeHeader = response.headers.get("content-type");
+      const html = decodeHtml(arrayBuffer, contentTypeHeader);
+      const $ = cheerio.load(html);
 
-    const ogSiteName = $('meta[property="og:site_name"]')
-      .attr("content")
-      ?.trim();
-    const inferredSiteName = parsedUrl.hostname.replace(/^www\./i, "");
-    const siteName = ogSiteName || inferredSiteName;
+      const rawTitle = extractTitle($, isAmazon);
+      const title =
+        rawTitle && !/robot\s*check/i.test(rawTitle)
+          ? rawTitle
+          : inferredSiteName;
 
-    const price = extractPrice($);
+      const imageUrl = extractImageUrl($, parsedUrl);
 
-    return NextResponse.json(
-      {
-        title,
-        imageUrl,
-        siteName,
-        productUrl: parsedUrl.toString(),
-        price,
-      },
-      { status: 200 }
-    );
+      const ogSiteName = $('meta[property="og:site_name"]')
+        .attr("content")
+        ?.trim();
+      const siteName = ogSiteName || inferredSiteName;
+
+      const price = extractPrice($);
+
+      return NextResponse.json(
+        {
+          title,
+          imageUrl,
+          siteName,
+          productUrl: parsedUrl.toString(),
+          price,
+        },
+        { status: 200 }
+      );
+    } catch {
+      return NextResponse.json(
+        {
+          title: inferredSiteName,
+          imageUrl: "",
+          siteName: inferredSiteName,
+          productUrl: parsedUrl.toString(),
+          price: null,
+        },
+        { status: 200 }
+      );
+    }
   } catch (error) {
     const message =
       error instanceof Error

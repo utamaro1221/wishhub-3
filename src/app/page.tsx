@@ -414,6 +414,7 @@ export default function Home() {
   };
 
   const handleScrape = async () => {
+    if (!isOwnerActive) return;
     if (!inputUrl.trim()) {
       alert("URLを入力してください");
       return;
@@ -504,6 +505,7 @@ export default function Home() {
   };
 
   const handleOpenManualModal = () => {
+    if (!isOwnerActive) return;
     let siteName = "";
     try {
       if (inputUrl.trim()) {
@@ -528,6 +530,7 @@ export default function Home() {
   };
 
   const handleOpenEditModal = (item: WishItem) => {
+    if (!isOwnerActive) return;
     setIsImageError(false);
     setFormData({
       title: item.title,
@@ -552,6 +555,7 @@ export default function Home() {
 
   const handleSubmitModal = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isOwnerActive) return;
 
     const parsedPrice =
       formData.price.trim() !== "" && !isNaN(Number(formData.price))
@@ -696,6 +700,7 @@ export default function Home() {
   };
 
   const handleTogglePurchased = async (id: string) => {
+    if (!isOwnerActive) return;
     const target = items.find((i) => i.id === id);
     if (!target) return;
 
@@ -721,6 +726,7 @@ export default function Home() {
   };
 
   const handleDeleteItem = async (id: string) => {
+    if (!isOwnerActive) return;
     if (!confirm("本当にこのアイテムを削除しますか？")) return;
 
     try {
@@ -1002,86 +1008,88 @@ export default function Home() {
               </div>
             )}
 
-            <section className="bg-zinc-900/90 border border-zinc-800/80 rounded-3xl p-5 sm:p-6 shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-base font-semibold text-zinc-100">
-                  新しいアイテムを追加
-                </h2>
-                <button
-                  type="button"
-                  onClick={handleOpenManualModal}
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-orange-400 hover:underline cursor-pointer"
-                >
-                  <FileEdit className="w-3.5 h-3.5" />
-                  <span>直接手動で登録</span>
-                </button>
-              </div>
-              <div className="flex flex-col sm:flex-row gap-3">
-                <div className="flex-1 relative">
-                  <input
-                    type="url"
-                    value={inputUrl}
-                    disabled={isLoading}
-                    onChange={(e) => {
-                      setInputUrl(e.target.value);
-                      if (errorMessage) setErrorMessage("");
-                      if (isSecurityError) setIsSecurityError(false);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !isLoading) {
-                        e.preventDefault();
-                        handleScrape();
-                      }
-                    }}
-                    placeholder="商品ページのURLを入力 (例: https://www.amazon.co.jp/...)"
-                    className="w-full px-4 py-2.5 rounded-xl border border-zinc-700 bg-zinc-800/60 focus:outline-none focus:ring-2 focus:ring-orange-500 text-zinc-100 transition text-sm disabled:opacity-50"
-                  />
+            {isOwnerActive && (
+              <section className="bg-zinc-900/90 border border-zinc-800/80 rounded-3xl p-5 sm:p-6 shadow-sm">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-base font-semibold text-zinc-100">
+                    新しいアイテムを追加
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={handleOpenManualModal}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-orange-400 hover:underline cursor-pointer"
+                  >
+                    <FileEdit className="w-3.5 h-3.5" />
+                    <span>直接手動で登録</span>
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleScrape}
-                  disabled={isLoading || inputUrl.trim() === ""}
-                  className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 disabled:bg-zinc-800 text-white font-medium text-sm transition shrink-0 cursor-pointer disabled:cursor-not-allowed shadow-sm"
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>取得中...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-4 h-4" />
-                      <span>情報を取得</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-              {errorMessage && (
-                <div
-                  className={`mt-4 p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                    isSecurityError
-                      ? "bg-red-950/70 border-red-800/80 text-red-200 shadow-md ring-1 ring-red-500/30"
-                      : "bg-red-950/40 border-red-900/50 text-red-400"
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 text-sm font-medium">
-                    <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
-                    <span>{errorMessage}</span>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="flex-1 relative">
+                    <input
+                      type="url"
+                      value={inputUrl}
+                      disabled={isLoading}
+                      onChange={(e) => {
+                        setInputUrl(e.target.value);
+                        if (errorMessage) setErrorMessage("");
+                        if (isSecurityError) setIsSecurityError(false);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !isLoading) {
+                          e.preventDefault();
+                          handleScrape();
+                        }
+                      }}
+                      placeholder="商品ページのURLを入力 (例: https://www.amazon.co.jp/...)"
+                      className="w-full px-4 py-2.5 rounded-xl border border-zinc-700 bg-zinc-800/60 focus:outline-none focus:ring-2 focus:ring-orange-500 text-zinc-100 transition text-sm disabled:opacity-50"
+                    />
                   </div>
-                  {!isSecurityError && (
-                    <button
-                      type="button"
-                      onClick={handleOpenManualModal}
-                      className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition shrink-0 cursor-pointer shadow-xs"
-                    >
-                      <FileEdit className="w-3.5 h-3.5" />
-                      <span>手動で登録する</span>
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={handleScrape}
+                    disabled={isLoading || inputUrl.trim() === ""}
+                    className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 disabled:bg-zinc-800 text-white font-medium text-sm transition shrink-0 cursor-pointer disabled:cursor-not-allowed shadow-sm"
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>取得中...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4" />
+                        <span>情報を取得</span>
+                      </>
+                    )}
+                  </button>
                 </div>
-              )}
-            </section>
+
+                {errorMessage && (
+                  <div
+                    className={`mt-4 p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                      isSecurityError
+                        ? "bg-red-950/70 border-red-800/80 text-red-200 shadow-md ring-1 ring-red-500/30"
+                        : "bg-red-950/40 border-red-900/50 text-red-400"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 text-sm font-medium">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+                      <span>{errorMessage}</span>
+                    </div>
+                    {!isSecurityError && (
+                      <button
+                        type="button"
+                        onClick={handleOpenManualModal}
+                        className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition shrink-0 cursor-pointer shadow-xs"
+                      >
+                        <FileEdit className="w-3.5 h-3.5" />
+                        <span>手動で登録する</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </section>
+            )}
 
             <section className="flex flex-col gap-4">
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
@@ -1321,23 +1329,35 @@ export default function Home() {
                       </div>
 
                       <div className="p-4 pt-0 mt-auto flex items-center justify-between gap-2 border-t border-zinc-800/80 pt-3">
-                        <button
-                          type="button"
-                          onClick={() => handleTogglePurchased(item.id)}
-                          className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-xl border border-zinc-800 hover:bg-zinc-800 transition cursor-pointer text-zinc-300"
-                        >
-                          {item.isPurchased ? (
-                            <>
-                              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                              <span>購入済み</span>
-                            </>
-                          ) : (
-                            <>
-                              <Circle className="w-4 h-4 text-zinc-500" />
-                              <span>未購入</span>
-                            </>
-                          )}
-                        </button>
+                        {isOwnerActive ? (
+                          <button
+                            type="button"
+                            onClick={() => handleTogglePurchased(item.id)}
+                            className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-xl border border-zinc-800 hover:bg-zinc-800 transition cursor-pointer text-zinc-300"
+                          >
+                            {item.isPurchased ? (
+                              <>
+                                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                                <span>購入済み</span>
+                              </>
+                            ) : (
+                              <>
+                                <Circle className="w-4 h-4 text-zinc-500" />
+                                <span>未購入</span>
+                              </>
+                            )}
+                          </button>
+                        ) : (
+                          <div className="text-xs text-zinc-500 flex items-center gap-1">
+                            {item.isPurchased ? (
+                              <span className="text-emerald-500 font-medium">
+                                ● 購入済み
+                              </span>
+                            ) : (
+                              <span>○ 未購入</span>
+                            )}
+                          </div>
+                        )}
 
                         <div className="flex items-center gap-1">
                           {item.productUrl && (
@@ -1356,14 +1376,16 @@ export default function Home() {
                               )}
                             </button>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditModal(item)}
-                            className="inline-flex items-center justify-center p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition cursor-pointer"
-                            title="編集"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
+                          {isOwnerActive && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditModal(item)}
+                              className="inline-flex items-center justify-center p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition cursor-pointer"
+                              title="編集"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          )}
                           {item.productUrl ? (
                             <a
                               href={item.productUrl}
@@ -1375,14 +1397,16 @@ export default function Home() {
                               <ExternalLink className="w-4 h-4" />
                             </a>
                           ) : null}
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteItem(item.id)}
-                            className="inline-flex items-center justify-center p-2 rounded-xl text-zinc-500 hover:text-red-400 hover:bg-red-950/30 transition cursor-pointer"
-                            title="削除"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {isOwnerActive && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteItem(item.id)}
+                              className="inline-flex items-center justify-center p-2 rounded-xl text-zinc-500 hover:text-red-400 hover:bg-red-950/30 transition cursor-pointer"
+                              title="削除"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>

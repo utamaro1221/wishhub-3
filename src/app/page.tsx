@@ -150,6 +150,52 @@ function isIpAddress(hostname: string): boolean {
   return false;
 }
 
+function sanitizeSafeUrl(url?: string | null): string {
+  if (!url || typeof url !== "string") return "#";
+  const trimmed = url.trim();
+  if (!trimmed) return "#";
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+      return parsed.toString();
+    }
+  } catch {}
+  return "#";
+}
+
+function sanitizeImageUrl(url?: string | null): string {
+  if (!url || typeof url !== "string") return "";
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+      return parsed.toString();
+    }
+  } catch {}
+  return "";
+}
+
+function isSafeExternalUrl(url?: string | null): boolean {
+  if (!url || typeof url !== "string") return false;
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeInputText(input: string, maxLength = 1000): string {
+  if (typeof input !== "string") return "";
+  return input
+    .replace(/\0/g, "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, "")
+    .slice(0, maxLength);
+}
+
 export default function Home() {
   const [myToken, setMyToken] = useState("");
   const [myListName, setMyListName] = useState("マイリスト");
@@ -190,7 +236,8 @@ export default function Home() {
   };
 
   const syncListNameToSupabase = async (token: string, name: string) => {
-    if (!token || !name) return;
+    const cleanName = sanitizeInputText(name, 100).trim();
+    if (!token || !cleanName) return;
     try {
       const { data: existingMeta, error: selectError } = await supabase
         .from("wish_items")
@@ -207,8 +254,8 @@ export default function Home() {
         const { error: updateError } = await supabase
           .from("wish_items")
           .update({
-            title: name,
-            memo: name,
+            title: cleanName,
+            memo: cleanName,
             price: 0,
             category: "__LIST_META__",
           })
@@ -219,13 +266,13 @@ export default function Home() {
       } else {
         const { error: insertError } = await supabase.from("wish_items").insert({
           list_id: token,
-          title: name,
+          title: cleanName,
           image_url: "",
           site_name: "",
           product_url: "",
           price: 0,
           priority: 0,
-          memo: name,
+          memo: cleanName,
           category: "__LIST_META__",
           is_purchased: false,
         });
@@ -260,7 +307,7 @@ export default function Home() {
             d.list_id &&
             d.title
           ) {
-            metaMap.set(d.list_id, d.title);
+            metaMap.set(d.list_id, sanitizeInputText(d.title, 100));
           }
         });
 
@@ -333,16 +380,19 @@ export default function Home() {
             return listId === targetToken && !isMeta;
           })
           .map((d: any) => ({
-            id: d.id,
-            listId: d.list_id || targetToken,
-            title: d.title || "",
-            imageUrl: d.image_url || "",
-            siteName: d.site_name || "",
-            productUrl: d.product_url || "",
+            id: String(d.id),
+            listId: String(d.list_id || targetToken),
+            title: sanitizeInputText(d.title || "", 200),
+            imageUrl: sanitizeImageUrl(d.image_url || ""),
+            siteName: sanitizeInputText(d.site_name || "", 100),
+            productUrl:
+              sanitizeSafeUrl(d.product_url || "") === "#"
+                ? ""
+                : sanitizeSafeUrl(d.product_url || ""),
             price: d.price ?? null,
             priority: d.priority ?? 3,
-            memo: d.memo || "",
-            category: d.category || "その他",
+            memo: sanitizeInputText(d.memo || "", 2000),
+            category: sanitizeInputText(d.category || "その他", 50),
             isPurchased: Boolean(d.is_purchased),
             reactions: d.reactions || 0,
           }));
@@ -379,7 +429,7 @@ export default function Home() {
     const nameParam = searchParams.get("name");
 
     if (shareParam && shareParam === token && nameParam) {
-      name = decodeURIComponent(nameParam);
+      name = sanitizeInputText(decodeURIComponent(nameParam), 100).trim();
       localStorage.setItem(STORAGE_KEY_NAME, name);
     }
 
@@ -398,7 +448,7 @@ export default function Home() {
 
     if (shareParam && shareParam !== token) {
       const decodedShareName = nameParam
-        ? decodeURIComponent(nameParam)
+        ? sanitizeInputText(decodeURIComponent(nameParam), 100).trim()
         : "友達のログ";
       const existingIndex = joined.findIndex((l) => l.token === shareParam);
       if (existingIndex >= 0) {
@@ -515,8 +565,8 @@ export default function Home() {
   }, [items, activeListToken, myToken]);
 
   const handleSaveMyName = async () => {
-    if (!tempMyName.trim()) return;
-    const newName = tempMyName.trim();
+    const newName = sanitizeInputText(tempMyName, 100).trim();
+    if (!newName) return;
     setMyListName(newName);
     localStorage.setItem(STORAGE_KEY_NAME, newName);
     setIsEditingMyName(false);
@@ -550,7 +600,7 @@ export default function Home() {
 
   const handleJoinList = () => {
     if (!joinInputUrl.trim()) return;
-    let token = joinInputUrl.trim();
+    let token = sanitizeInputText(joinInputUrl, 200).trim();
     let name = "友達のログ";
 
     try {
@@ -559,8 +609,8 @@ export default function Home() {
         const pShare = urlObj.searchParams.get("share");
         const pName = urlObj.searchParams.get("name");
         if (pShare) {
-          token = pShare;
-          if (pName) name = decodeURIComponent(pName);
+          token = sanitizeInputText(pShare, 100).trim();
+          if (pName) name = sanitizeInputText(decodeURIComponent(pName), 100).trim();
         }
       }
     } catch {}
@@ -877,19 +927,36 @@ export default function Home() {
       } catch {}
     }
 
+    const cleanTitle = sanitizeInputText(formData.title, 200).trim();
+    if (!cleanTitle) {
+      alert("商品名を入力してください");
+      return;
+    }
+
+    const cleanMemo = sanitizeInputText(formData.memo, 2000);
+    const cleanCategory = sanitizeInputText(formData.category, 50).trim() || "その他";
+    const cleanSiteName = sanitizeInputText(derivedSiteName, 100).trim();
+    const rawPUrl = formData.productUrl.trim();
+    const cleanProductUrl = rawPUrl
+      ? sanitizeSafeUrl(rawPUrl) === "#"
+        ? ""
+        : sanitizeSafeUrl(rawPUrl)
+      : "";
+    const cleanImageUrl = sanitizeImageUrl(formData.imageUrl.trim());
+
     if (editingItemId) {
       try {
         const { error } = await supabase
           .from("wish_items")
           .update({
-            title: formData.title,
-            image_url: formData.imageUrl,
-            site_name: derivedSiteName,
-            product_url: formData.productUrl.trim(),
+            title: cleanTitle,
+            image_url: cleanImageUrl,
+            site_name: cleanSiteName,
+            product_url: cleanProductUrl,
             price: parsedPrice,
             priority: formData.priority,
-            memo: formData.memo,
-            category: formData.category,
+            memo: cleanMemo,
+            category: cleanCategory,
           })
           .eq("id", editingItemId);
 
@@ -905,14 +972,14 @@ export default function Home() {
           item.id === editingItemId
             ? {
                 ...item,
-                title: formData.title,
-                imageUrl: formData.imageUrl,
-                siteName: derivedSiteName,
-                productUrl: formData.productUrl.trim(),
+                title: cleanTitle,
+                imageUrl: cleanImageUrl,
+                siteName: cleanSiteName,
+                productUrl: cleanProductUrl,
                 price: parsedPrice,
                 priority: formData.priority,
-                memo: formData.memo,
-                category: formData.category,
+                memo: cleanMemo,
+                category: cleanCategory,
               }
             : item
         );
@@ -926,14 +993,14 @@ export default function Home() {
       const currentToken = activeListToken || myToken;
       const insertPayload = {
         list_id: currentToken,
-        title: formData.title,
-        image_url: formData.imageUrl,
-        site_name: derivedSiteName,
-        product_url: formData.productUrl.trim(),
+        title: cleanTitle,
+        image_url: cleanImageUrl,
+        site_name: cleanSiteName,
+        product_url: cleanProductUrl,
         price: parsedPrice,
         priority: formData.priority,
-        memo: formData.memo,
-        category: formData.category,
+        memo: cleanMemo,
+        category: cleanCategory,
         is_purchased: false,
       };
 
@@ -965,14 +1032,17 @@ export default function Home() {
           const savedItem: WishItem = {
             id: data.id,
             listId: data.list_id || currentToken,
-            title: data.title || "",
-            imageUrl: data.image_url || "",
-            siteName: data.site_name || "",
-            productUrl: data.product_url || "",
+            title: sanitizeInputText(data.title || "", 200),
+            imageUrl: sanitizeImageUrl(data.image_url || ""),
+            siteName: sanitizeInputText(data.site_name || "", 100),
+            productUrl:
+              sanitizeSafeUrl(data.product_url || "") === "#"
+                ? ""
+                : sanitizeSafeUrl(data.product_url || ""),
             price: data.price ?? null,
             priority: data.priority ?? 3,
-            memo: data.memo || "",
-            category: data.category || "その他",
+            memo: sanitizeInputText(data.memo || "", 2000),
+            category: sanitizeInputText(data.category || "その他", 50),
             isPurchased: Boolean(data.is_purchased),
             reactions: data.reactions || 0,
           };
@@ -1542,18 +1612,18 @@ export default function Home() {
                       }`}
                     >
                       <div>
-                        {item.productUrl ? (
+                        {sanitizeSafeUrl(item.productUrl) !== "#" ? (
                           <a
-                            href={item.productUrl}
+                            href={sanitizeSafeUrl(item.productUrl)}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => handleOpenExternalUrl(e, item.productUrl)}
                             className="block relative aspect-video w-full bg-zinc-950 overflow-hidden cursor-pointer"
                             title={`${item.title} の商品ページを開く`}
                           >
-                            {item.imageUrl ? (
+                            {sanitizeImageUrl(item.imageUrl) ? (
                               <img
-                                src={item.imageUrl}
+                                src={sanitizeImageUrl(item.imageUrl)}
                                 alt={item.title}
                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                               />
@@ -1578,9 +1648,9 @@ export default function Home() {
                           </a>
                         ) : (
                           <div className="relative aspect-video w-full bg-zinc-950 overflow-hidden flex items-center justify-center">
-                            {item.imageUrl ? (
+                            {sanitizeImageUrl(item.imageUrl) ? (
                               <img
-                                src={item.imageUrl}
+                                src={sanitizeImageUrl(item.imageUrl)}
                                 alt={item.title}
                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                               />
@@ -1713,9 +1783,9 @@ export default function Home() {
                               <Pencil className="w-4 h-4" />
                             </button>
                           )}
-                          {item.productUrl ? (
+                          {sanitizeSafeUrl(item.productUrl) !== "#" ? (
                             <a
-                              href={item.productUrl}
+                              href={sanitizeSafeUrl(item.productUrl)}
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={(e) => handleOpenExternalUrl(e, item.productUrl)}
@@ -1871,9 +1941,9 @@ export default function Home() {
             >
               <div className="flex gap-4 items-start">
                 <div className="w-24 h-24 rounded-2xl bg-zinc-950 overflow-hidden shrink-0 flex items-center justify-center border border-zinc-800">
-                  {formData.imageUrl.trim() && !isImageError ? (
+                  {sanitizeImageUrl(formData.imageUrl) && !isImageError ? (
                     <img
-                      src={formData.imageUrl.trim()}
+                      src={sanitizeImageUrl(formData.imageUrl)}
                       alt={formData.title || "thumbnail"}
                       onError={() => setIsImageError(true)}
                       className="w-full h-full object-cover"

@@ -479,6 +479,28 @@ function isAmazonCaptchaOrBlocked(html: string): boolean {
   );
 }
 
+function sanitizeText(str?: string | null, maxLength = 1000): string {
+  if (!str || typeof str !== "string") return "";
+  return str
+    .replace(/\0/g, "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, "")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function sanitizeSafeUrl(url?: string | null): string {
+  if (!url || typeof url !== "string") return "";
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+      return parsed.toString();
+    }
+  } catch {}
+  return "";
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => null);
@@ -497,7 +519,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const trimmed = rawUrl.trim();
+    let trimmed = rawUrl.trim();
     if (!trimmed.toLowerCase().startsWith("https://")) {
       return NextResponse.json(
         { error: "https:// から始まる安全なURLを入力してください" },
@@ -691,10 +713,10 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json(
         {
-          title,
-          imageUrl,
-          siteName,
-          productUrl: parsedUrl.toString(),
+          title: sanitizeText(title, 200),
+          imageUrl: sanitizeSafeUrl(imageUrl),
+          siteName: sanitizeText(siteName, 100),
+          productUrl: sanitizeSafeUrl(parsedUrl.toString()),
           price,
         },
         { status: 200 }
@@ -711,10 +733,10 @@ export async function POST(request: NextRequest) {
       }
       return NextResponse.json(
         {
-          title: inferredSiteName,
+          title: sanitizeText(inferredSiteName, 100),
           imageUrl: "",
-          siteName: inferredSiteName,
-          productUrl: parsedUrl.toString(),
+          siteName: sanitizeText(inferredSiteName, 100),
+          productUrl: sanitizeSafeUrl(parsedUrl.toString()),
           price: null,
         },
         { status: 200 }

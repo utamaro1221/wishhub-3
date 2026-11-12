@@ -611,7 +611,7 @@ export default function Home() {
 
         setIsSecurityError(false);
         setErrorMessage(errorDetail);
-        alert("取得失敗: " + errorDetail);
+        alert(errorDetail);
 
         let siteName = "";
         try {

@@ -426,6 +426,27 @@ async function checkSafeBrowsing(
   }
 }
 
+function extractAmazonAsin(urlStr: string): string | null {
+  const match = urlStr.match(
+    /(?:\/dp\/|\/gp\/product\/|\/ASIN\/|\/gp\/aw\/d\/)([a-zA-Z0-9]{10})(?:[/?#]|$)/i
+  );
+  if (match?.[1]) {
+    return match[1].toUpperCase();
+  }
+  return null;
+}
+
+function isAmazonCaptchaOrBlocked(html: string): boolean {
+  if (!html) return false;
+  return (
+    html.includes("ロボットではありません") ||
+    html.includes("api-services-support@amazon.com") ||
+    html.includes("Type the characters you see in this image") ||
+    /robot\s*check/i.test(html) ||
+    /amazon\s*captcha/i.test(html)
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => null);
@@ -465,6 +486,49 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const isAmazon = /(?:amazon\.(?:co\.jp|com)|amzn\.(?:asia|to))/i.test(
+      parsedUrl.hostname
+    );
+
+    const browserHeaders = {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+      Accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+      "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
+      "Sec-Ch-Ua":
+        '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
+      "Sec-Ch-Ua-Mobile": "?0",
+      "Sec-Ch-Ua-Platform": '"Windows"',
+      "Sec-Fetch-Dest": "document",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Site": "none",
+      "Sec-Fetch-User": "?1",
+      "Upgrade-Insecure-Requests": "1",
+    };
+
+    if (isAmazon) {
+      let asin = extractAmazonAsin(trimmed);
+      if (!asin && /(?:amzn\.(?:asia|to))/i.test(parsedUrl.hostname)) {
+        try {
+          const redirectRes = await fetch(trimmed, {
+            method: "HEAD",
+            redirect: "follow",
+            headers: browserHeaders,
+          });
+          if (redirectRes.url) {
+            asin = extractAmazonAsin(redirectRes.url);
+          }
+        } catch {}
+      }
+      if (asin) {
+        trimmed = `https://www.amazon.co.jp/dp/${asin}`;
+        parsedUrl = new URL(trimmed);
+      }
+    }
+
     const isWhitelisted = isWhitelistedDomain(parsedUrl.hostname);
 
     if (!isWhitelisted) {
@@ -480,33 +544,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const isAmazon = /amazon\.(co\.jp|com)/i.test(parsedUrl.hostname);
     const inferredSiteName = parsedUrl.hostname.replace(/^www\./i, "");
 
     let response: Response;
     try {
       response = await fetch(parsedUrl.toString(), {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-          Accept:
-            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-          "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
-          "Accept-Encoding": "gzip, deflate, br",
-          "Cache-Control": "max-age=0",
-          "Sec-Ch-Ua":
-            '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-          "Sec-Ch-Ua-Mobile": "?0",
-          "Sec-Ch-Ua-Platform": '"Windows"',
-          "Sec-Fetch-Dest": "document",
-          "Sec-Fetch-Mode": "navigate",
-          "Sec-Fetch-Site": "same-origin",
-          "Sec-Fetch-User": "?1",
-          "Upgrade-Insecure-Requests": "1",
-          Referer: "https://www.google.co.jp/",
-        },
+        headers: browserHeaders,
       });
     } catch {
+      if (isAmazon) {
+        return NextResponse.json(
+          {
+            error:
+              "取得制限により自動取得できませんでした。手動で入力してください",
+          },
+          { status: 429 }
+        );
+      }
       return NextResponse.json(
         {
           title: inferredSiteName,
@@ -520,6 +574,20 @@ export async function POST(request: NextRequest) {
     }
 
     if (!response.ok) {
+      if (
+        isAmazon &&
+        (response.status === 503 ||
+          response.status === 403 ||
+          response.status === 429)
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "取得制限により自動取得できませんでした。手動で入力してください",
+          },
+          { status: 429 }
+        );
+      }
       return NextResponse.json(
         {
           title: inferredSiteName,
@@ -536,14 +604,36 @@ export async function POST(request: NextRequest) {
       const arrayBuffer = await response.arrayBuffer();
       const contentTypeHeader = response.headers.get("content-type");
       const html = decodeHtml(arrayBuffer, contentTypeHeader);
+
+      if (isAmazon && isAmazonCaptchaOrBlocked(html)) {
+        return NextResponse.json(
+          {
+            error:
+              "取得制限により自動取得できませんでした。手動で入力してください",
+          },
+          { status: 429 }
+        );
+      }
+
       const $ = cheerio.load(html);
 
       const rawTitle = extractTitle($, isAmazon);
-      const title =
-        rawTitle && !/robot\s*check/i.test(rawTitle)
-          ? rawTitle
-          : inferredSiteName;
+      const isBlockedTitle =
+        !rawTitle ||
+        /robot\s*check/i.test(rawTitle) ||
+        /amazon(\.co\.jp)?$/i.test(rawTitle.trim());
 
+      if (isAmazon && isBlockedTitle) {
+        return NextResponse.json(
+          {
+            error:
+              "取得制限により自動取得できませんでした。手動で入力してください",
+          },
+          { status: 429 }
+        );
+      }
+
+      const title = rawTitle;
       const imageUrl = extractImageUrl($, parsedUrl);
 
       const ogSiteName = $('meta[property="og:site_name"]')
@@ -564,6 +654,15 @@ export async function POST(request: NextRequest) {
         { status: 200 }
       );
     } catch {
+      if (isAmazon) {
+        return NextResponse.json(
+          {
+            error:
+              "取得制限により自動取得できませんでした。手動で入力してください",
+          },
+          { status: 429 }
+        );
+      }
       return NextResponse.json(
         {
           title: inferredSiteName,

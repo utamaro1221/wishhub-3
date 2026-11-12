@@ -343,15 +343,19 @@ const WHITELIST_DOMAINS = [
   "amazon.com",
   "amzn.asia",
   "amzn.to",
-  "zozo.jp",
   "rakuten.co.jp",
-  "shopping.yahoo.co.jp",
   "yahoo.co.jp",
-  "jp.mercari.com",
-  "mercari.com",
+  "shopping.yahoo.co.jp",
+  "zozo.jp",
+  "zara.com",
   "uniqlo.com",
   "gu-global.com",
   "muji.com",
+  "apple.com",
+  "ankerjapan.com",
+  "qoo10.jp",
+  "mercari.com",
+  "jp.mercari.com",
   "yodobashi.com",
   "biccamera.com",
 ];
@@ -361,6 +365,34 @@ function isWhitelistedDomain(hostname: string): boolean {
   return WHITELIST_DOMAINS.some(
     (domain) => host === domain || host.endsWith("." + domain)
   );
+}
+
+const BLOCKED_SHORT_DOMAINS = [
+  "bit.ly",
+  "tinyurl.com",
+  "t.co",
+  "goo.gl",
+  "ow.ly",
+  "is.gd",
+  "buff.ly",
+  "adf.ly",
+  "bit.do",
+  "shorturl.at",
+];
+
+function isBlockedShortDomain(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return BLOCKED_SHORT_DOMAINS.some(
+    (domain) => host === domain || host.endsWith("." + domain)
+  );
+}
+
+function isIpAddress(hostname: string): boolean {
+  const cleanHost = hostname.replace(/^\[/, "").replace(/\]$/, "");
+  const ipv4Pattern = /^(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+  if (ipv4Pattern.test(cleanHost)) return true;
+  if (cleanHost.includes(":") || cleanHost.startsWith("fe80") || cleanHost === "::1") return true;
+  return false;
 }
 
 async function checkSafeBrowsing(
@@ -465,9 +497,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let trimmed = rawUrl.trim();
-    if (!/^https?:\/\//i.test(trimmed)) {
-      trimmed = "https://" + trimmed;
+    const trimmed = rawUrl.trim();
+    if (!trimmed.toLowerCase().startsWith("https://")) {
+      return NextResponse.json(
+        { error: "https:// から始まる安全なURLを入力してください" },
+        { status: 400 }
+      );
     }
 
     let parsedUrl: URL;
@@ -475,14 +510,25 @@ export async function POST(request: NextRequest) {
       parsedUrl = new URL(trimmed);
     } catch {
       return NextResponse.json(
-        {
-          title: "",
-          imageUrl: "",
-          siteName: "",
-          productUrl: rawUrl.trim(),
-          price: null,
-        },
-        { status: 200 }
+        { error: "https:// から始まる有効なURLを入力してください" },
+        { status: 400 }
+      );
+    }
+
+    if (parsedUrl.protocol !== "https:") {
+      return NextResponse.json(
+        { error: "https:// から始まる安全なURLを入力してください" },
+        { status: 400 }
+      );
+    }
+
+    if (
+      isIpAddress(parsedUrl.hostname) ||
+      isBlockedShortDomain(parsedUrl.hostname)
+    ) {
+      return NextResponse.json(
+        { error: "IPアドレスや短縮URLは安全のため登録できません" },
+        { status: 400 }
       );
     }
 

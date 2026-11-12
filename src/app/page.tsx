@@ -93,6 +93,63 @@ const initialFormData: ItemFormData = {
   category: "その他",
 };
 
+const WHITELIST_DOMAINS = [
+  "amazon.co.jp",
+  "amazon.com",
+  "amzn.asia",
+  "amzn.to",
+  "rakuten.co.jp",
+  "yahoo.co.jp",
+  "shopping.yahoo.co.jp",
+  "zozo.jp",
+  "zara.com",
+  "uniqlo.com",
+  "gu-global.com",
+  "muji.com",
+  "apple.com",
+  "ankerjapan.com",
+  "qoo10.jp",
+  "mercari.com",
+  "jp.mercari.com",
+  "yodobashi.com",
+  "biccamera.com",
+];
+
+function isWhitelistedDomain(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return WHITELIST_DOMAINS.some(
+    (domain) => host === domain || host.endsWith("." + domain)
+  );
+}
+
+const BLOCKED_SHORT_DOMAINS = [
+  "bit.ly",
+  "tinyurl.com",
+  "t.co",
+  "goo.gl",
+  "ow.ly",
+  "is.gd",
+  "buff.ly",
+  "adf.ly",
+  "bit.do",
+  "shorturl.at",
+];
+
+function isBlockedShortDomain(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return BLOCKED_SHORT_DOMAINS.some(
+    (domain) => host === domain || host.endsWith("." + domain)
+  );
+}
+
+function isIpAddress(hostname: string): boolean {
+  const cleanHost = hostname.replace(/^\[/, "").replace(/\]$/, "");
+  const ipv4Pattern = /^(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+  if (ipv4Pattern.test(cleanHost)) return true;
+  if (cleanHost.includes(":") || cleanHost.startsWith("fe80") || cleanHost === "::1") return true;
+  return false;
+}
+
 export default function Home() {
   const [myToken, setMyToken] = useState("");
   const [myListName, setMyListName] = useState("マイリスト");
@@ -573,10 +630,63 @@ export default function Home() {
     } catch {}
   };
 
+  const handleOpenExternalUrl = (e: React.MouseEvent, url: string) => {
+    if (!url) return;
+    try {
+      const parsed = new URL(url);
+      if (!isWhitelistedDomain(parsed.hostname)) {
+        if (
+          !confirm(
+            "主要ECサイト以外の外部URL（" +
+              parsed.hostname +
+              "）を開こうとしています。フィッシングや詐欺サイトにご注意ください。移動しますか？"
+          )
+        ) {
+          e.preventDefault();
+        }
+      }
+    } catch {}
+  };
+
   const handleScrape = async () => {
     if (!isOwnerActive) return;
     if (!inputUrl.trim()) {
       alert("URLを入力してください");
+      return;
+    }
+
+    const trimmedInput = inputUrl.trim();
+    if (!trimmedInput.toLowerCase().startsWith("https://")) {
+      setIsSecurityError(true);
+      setErrorMessage("https:// から始まる安全なURLを入力してください");
+      alert("https:// から始まる安全なURLを入力してください");
+      return;
+    }
+
+    let parsedInput: URL;
+    try {
+      parsedInput = new URL(trimmedInput);
+    } catch {
+      setIsSecurityError(true);
+      setErrorMessage("https:// から始まる有効なURLを入力してください");
+      alert("https:// から始まる有効なURLを入力してください");
+      return;
+    }
+
+    if (parsedInput.protocol !== "https:") {
+      setIsSecurityError(true);
+      setErrorMessage("https:// から始まる安全なURLを入力してください");
+      alert("https:// から始まる安全なURLを入力してください");
+      return;
+    }
+
+    if (
+      isIpAddress(parsedInput.hostname) ||
+      isBlockedShortDomain(parsedInput.hostname)
+    ) {
+      setIsSecurityError(true);
+      setErrorMessage("IPアドレスや短縮URLは安全のため登録できません");
+      alert("IPアドレスや短縮URLは安全のため登録できません");
       return;
     }
 
@@ -716,6 +826,43 @@ export default function Home() {
   const handleSubmitModal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isOwnerActive) return;
+
+    if (formData.productUrl.trim()) {
+      const pUrl = formData.productUrl.trim();
+      if (!pUrl.toLowerCase().startsWith("https://")) {
+        alert("https:// から始まる安全なURLを入力してください");
+        return;
+      }
+      let parsed: URL;
+      try {
+        parsed = new URL(pUrl);
+      } catch {
+        alert("https:// から始まる有効なURLを入力してください");
+        return;
+      }
+      if (parsed.protocol !== "https:") {
+        alert("https:// から始まる安全なURLを入力してください");
+        return;
+      }
+      if (
+        isIpAddress(parsed.hostname) ||
+        isBlockedShortDomain(parsed.hostname)
+      ) {
+        alert("IPアドレスや短縮URLは安全のため登録できません");
+        return;
+      }
+      if (!isWhitelistedDomain(parsed.hostname)) {
+        if (
+          !confirm(
+            "このURL（" +
+              parsed.hostname +
+              "）は主要ショッピングサイト一覧に含まれていません。信頼できるサイトであることを確認してください。登録を続行しますか？"
+          )
+        ) {
+          return;
+        }
+      }
+    }
 
     const parsedPrice =
       formData.price.trim() !== "" && !isNaN(Number(formData.price))
@@ -1400,6 +1547,7 @@ export default function Home() {
                             href={item.productUrl}
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={(e) => handleOpenExternalUrl(e, item.productUrl)}
                             className="block relative aspect-video w-full bg-zinc-950 overflow-hidden cursor-pointer"
                             title={`${item.title} の商品ページを開く`}
                           >
@@ -1570,6 +1718,7 @@ export default function Home() {
                               href={item.productUrl}
                               target="_blank"
                               rel="noopener noreferrer"
+                              onClick={(e) => handleOpenExternalUrl(e, item.productUrl)}
                               className="inline-flex items-center justify-center p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
                               title="商品を見る"
                             >

@@ -68,6 +68,7 @@ type SortType = "newest" | "priority" | "price-asc" | "price-desc";
 type MobileTab = "list" | "logs";
 
 const STORAGE_KEY_ITEMS = "wishhub_items_v3";
+const STORAGE_KEY_LISTS = "wishhub_lists_v4";
 const STORAGE_KEY_TOKEN = "wishhub_my_list_token";
 const STORAGE_KEY_NAME = "wishhub_my_list_name";
 const STORAGE_KEY_JOINED = "wishhub_joined_lists";
@@ -197,9 +198,7 @@ function sanitizeInputText(input: string, maxLength = 1000): string {
 }
 
 export default function Home() {
-  const [myToken, setMyToken] = useState("");
-  const [myListName, setMyListName] = useState("マイリスト");
-  const [joinedLists, setJoinedLists] = useState<ListInfo[]>([]);
+  const [lists, setLists] = useState<ListInfo[]>([]);
   const [activeListToken, setActiveListToken] = useState("");
 
   const [items, setItems] = useState<WishItem[]>([]);
@@ -218,13 +217,15 @@ export default function Home() {
   const [isImageError, setIsImageError] = useState(false);
 
   const [mobileTab, setMobileTab] = useState<MobileTab>("list");
-  const [isAddListModalOpen, setIsAddListModalOpen] = useState(false);
+  const [isCreateListModalOpen, setIsCreateListModalOpen] = useState(false);
+  const [newListName, setNewListName] = useState("");
+  const [isJoinListModalOpen, setIsJoinListModalOpen] = useState(false);
   const [joinInputUrl, setJoinInputUrl] = useState("");
-  const [isEditingMyName, setIsEditingMyName] = useState(false);
-  const [tempMyName, setTempMyName] = useState("");
+  const [isEditingNameModalOpen, setIsEditingNameModalOpen] = useState(false);
+  const [editingListToken, setEditingListToken] = useState("");
+  const [tempListName, setTempListName] = useState("");
   const [copiedShareUrl, setCopiedShareUrl] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [myListLastUpdated, setMyListLastUpdated] = useState<number>(0);
 
   const formatRelativeTime = (timestamp: number) => {
     if (!mounted || !timestamp) return "たった今";
@@ -299,7 +300,6 @@ export default function Home() {
       }
 
       if (data) {
-        const currentLocalToken = localStorage.getItem(STORAGE_KEY_TOKEN) || myToken;
         const metaMap = new Map<string, string>();
         data.forEach((d: any) => {
           if (
@@ -311,18 +311,8 @@ export default function Home() {
           }
         });
 
-        if (metaMap.has(currentLocalToken)) {
-          const syncedMyName = metaMap.get(currentLocalToken)!;
-          if (syncedMyName && syncedMyName !== myListName) {
-            setMyListName(syncedMyName);
-            try {
-              localStorage.setItem(STORAGE_KEY_NAME, syncedMyName);
-            } catch {}
-          }
-        }
-
         if (metaMap.size > 0) {
-          setJoinedLists((prev) => {
+          setLists((prev) => {
             let changed = false;
             let updated = prev.map((l) => {
               const remoteName = metaMap.get(l.token);
@@ -333,7 +323,7 @@ export default function Home() {
               return l;
             });
             if (
-              targetToken !== currentLocalToken &&
+              targetToken &&
               metaMap.has(targetToken) &&
               !prev.some((l) => l.token === targetToken)
             ) {
@@ -349,18 +339,14 @@ export default function Home() {
             }
             if (changed) {
               try {
-                localStorage.setItem(STORAGE_KEY_JOINED, JSON.stringify(updated));
+                localStorage.setItem(STORAGE_KEY_LISTS, JSON.stringify(updated));
               } catch {}
             }
             return changed ? updated : prev;
           });
         }
 
-        const activeTokenName =
-          targetToken === currentLocalToken
-            ? metaMap.get(currentLocalToken) || myListName
-            : metaMap.get(targetToken);
-
+        const activeTokenName = metaMap.get(targetToken);
         if (activeTokenName) {
           try {
             const url = new URL(window.location.href);
@@ -413,67 +399,100 @@ export default function Home() {
 
   useEffect(() => {
     setMounted(true);
-    setMyListLastUpdated(Date.now());
 
-    let token = localStorage.getItem(STORAGE_KEY_TOKEN);
-    if (!token) {
-      token = crypto.randomUUID();
-      localStorage.setItem(STORAGE_KEY_TOKEN, token);
+    let loadedLists: ListInfo[] = [];
+    try {
+      const storedLists = localStorage.getItem(STORAGE_KEY_LISTS);
+      if (storedLists) {
+        const parsed = JSON.parse(storedLists);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          loadedLists = parsed;
+        }
+      }
+    } catch {}
+
+    if (loadedLists.length === 0) {
+      let legacyToken = localStorage.getItem(STORAGE_KEY_TOKEN);
+      let legacyName = localStorage.getItem(STORAGE_KEY_NAME) || "マイリスト";
+      if (!legacyToken) {
+        legacyToken = crypto.randomUUID();
+        localStorage.setItem(STORAGE_KEY_TOKEN, legacyToken);
+      }
+      const defaultList: ListInfo = {
+        token: legacyToken,
+        name: legacyName,
+        lastUpdated: Date.now(),
+        isOwner: true,
+        reactionCount: 2,
+      };
+      loadedLists.push(defaultList);
+
+      try {
+        const legacyJoinedStr = localStorage.getItem(STORAGE_KEY_JOINED);
+        if (legacyJoinedStr) {
+          const parsedJoined = JSON.parse(legacyJoinedStr);
+          if (Array.isArray(parsedJoined)) {
+            parsedJoined.forEach((jl: any) => {
+              if (jl && jl.token && !loadedLists.some((l) => l.token === jl.token)) {
+                loadedLists.push({
+                  token: String(jl.token),
+                  name: sanitizeInputText(jl.name || "友達のログ", 100),
+                  lastUpdated: Number(jl.lastUpdated) || Date.now(),
+                  isOwner: Boolean(jl.isOwner),
+                  reactionCount: Number(jl.reactionCount) || 1,
+                });
+              }
+            });
+          }
+        }
+      } catch {}
     }
-    setMyToken(token);
-
-    let name = localStorage.getItem(STORAGE_KEY_NAME) || "マイリスト";
 
     const searchParams = new URLSearchParams(window.location.search);
     const shareParam = searchParams.get("share");
     const nameParam = searchParams.get("name");
+    const decodedName = nameParam
+      ? sanitizeInputText(decodeURIComponent(nameParam), 100).trim()
+      : "";
 
-    if (shareParam && shareParam === token && nameParam) {
-      name = sanitizeInputText(decodeURIComponent(nameParam), 100).trim();
-      localStorage.setItem(STORAGE_KEY_NAME, name);
-    }
+    let initialActive = loadedLists[0].token;
 
-    setMyListName(name);
-    setTempMyName(name);
-
-    let joined: ListInfo[] = [];
-    try {
-      const storedJoined = localStorage.getItem(STORAGE_KEY_JOINED);
-      if (storedJoined) {
-        joined = JSON.parse(storedJoined);
-      }
-    } catch {}
-
-    let initialActive = token;
-
-    if (shareParam && shareParam !== token) {
-      const decodedShareName = nameParam
-        ? sanitizeInputText(decodeURIComponent(nameParam), 100).trim()
-        : "友達のログ";
-      const existingIndex = joined.findIndex((l) => l.token === shareParam);
+    if (shareParam) {
+      const existingIndex = loadedLists.findIndex((l) => l.token === shareParam);
       if (existingIndex >= 0) {
-        if (nameParam) {
-          joined[existingIndex] = {
-            ...joined[existingIndex],
-            name: decodedShareName,
+        if (decodedName && decodedName !== loadedLists[existingIndex].name) {
+          loadedLists[existingIndex] = {
+            ...loadedLists[existingIndex],
+            name: decodedName,
           };
-          localStorage.setItem(STORAGE_KEY_JOINED, JSON.stringify(joined));
         }
+        initialActive = shareParam;
       } else {
         const newList: ListInfo = {
           token: shareParam,
-          name: decodedShareName,
+          name: decodedName || "友達のログ",
           lastUpdated: Date.now(),
           isOwner: false,
           reactionCount: 2,
         };
-        joined = [newList, ...joined];
-        localStorage.setItem(STORAGE_KEY_JOINED, JSON.stringify(joined));
+        loadedLists = [newList, ...loadedLists];
+        initialActive = shareParam;
       }
-      initialActive = shareParam;
+    } else {
+      try {
+        const activeObj = loadedLists[0];
+        const url = new URL(window.location.href);
+        url.searchParams.set("share", activeObj.token);
+        url.searchParams.set("name", activeObj.name);
+        window.history.replaceState({}, "", url.toString());
+      } catch {}
     }
 
-    setJoinedLists(joined);
+    setLists(loadedLists);
+    try {
+      localStorage.setItem(STORAGE_KEY_LISTS, JSON.stringify(loadedLists));
+    } catch {}
+
     setActiveListToken(initialActive);
 
     const storedItems = localStorage.getItem(STORAGE_KEY_ITEMS);
@@ -490,7 +509,7 @@ export default function Home() {
               )
               .map((item) => ({
                 ...item,
-                listId: item.listId || token,
+                listId: item.listId || initialActive,
                 category: item.category || "その他",
                 reactions: item.reactions || 0,
               }))
@@ -546,45 +565,151 @@ export default function Home() {
     } catch {}
   }, [items, isLoaded]);
 
-  const isOwnerActive = activeListToken === myToken;
+  const activeList = useMemo(() => {
+    return lists.find((l) => l.token === activeListToken) || lists[0];
+  }, [lists, activeListToken]);
 
-  const currentListName = useMemo(() => {
-    if (isOwnerActive) return myListName;
-    const found = joinedLists.find((l) => l.token === activeListToken);
-    return found ? found.name : "共有ログ";
-  }, [isOwnerActive, myListName, joinedLists, activeListToken]);
+  const isOwnerActive = Boolean(activeList?.isOwner);
+
+  const currentListName = activeList?.name || "マイリスト";
 
   const activeItems = useMemo(() => {
-    const currentToken = activeListToken || myToken;
+    const currentToken = activeListToken || lists[0]?.token || "";
     return items.filter(
       (i) =>
-        (i.listId || myToken) === currentToken &&
+        (i.listId || "") === currentToken &&
         i.category !== "__LIST_META__" &&
         i.category !== "__list_meta__"
     );
-  }, [items, activeListToken, myToken]);
+  }, [items, activeListToken, lists]);
 
-  const handleSaveMyName = async () => {
-    const newName = sanitizeInputText(tempMyName, 100).trim();
-    if (!newName) return;
-    setMyListName(newName);
-    localStorage.setItem(STORAGE_KEY_NAME, newName);
-    setIsEditingMyName(false);
+  const handleSelectList = (targetToken: string) => {
+    setActiveListToken(targetToken);
+    setMobileTab("list");
+    const target = lists.find((l) => l.token === targetToken);
+    if (target) {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set("share", target.token);
+        url.searchParams.set("name", target.name);
+        window.history.replaceState({}, "", url.toString());
+      } catch {}
+    }
+  };
+
+  const handleCreateList = async () => {
+    const cleanName = sanitizeInputText(newListName, 100).trim();
+    if (!cleanName) return;
+
+    const newToken = crypto.randomUUID();
+    const newList: ListInfo = {
+      token: newToken,
+      name: cleanName,
+      lastUpdated: Date.now(),
+      isOwner: true,
+      reactionCount: 2,
+    };
+
+    const updatedLists = [newList, ...lists];
+    setLists(updatedLists);
+    try {
+      localStorage.setItem(STORAGE_KEY_LISTS, JSON.stringify(updatedLists));
+    } catch {}
+
+    setActiveListToken(newToken);
+    setIsCreateListModalOpen(false);
+    setNewListName("");
+    setMobileTab("list");
 
     try {
       const url = new URL(window.location.href);
-      url.searchParams.set("share", myToken);
-      url.searchParams.set("name", newName);
+      url.searchParams.set("share", newToken);
+      url.searchParams.set("name", cleanName);
       window.history.replaceState({}, "", url.toString());
     } catch {}
 
-    await syncListNameToSupabase(myToken, newName);
+    await syncListNameToSupabase(newToken, cleanName);
+    await fetchListItems(newToken);
+  };
+
+  const handleSaveListName = async () => {
+    const cleanName = sanitizeInputText(tempListName, 100).trim();
+    if (!cleanName || !editingListToken) return;
+
+    const updatedLists = lists.map((l) =>
+      l.token === editingListToken
+        ? { ...l, name: cleanName, lastUpdated: Date.now() }
+        : l
+    );
+    setLists(updatedLists);
+    try {
+      localStorage.setItem(STORAGE_KEY_LISTS, JSON.stringify(updatedLists));
+    } catch {}
+    setIsEditingNameModalOpen(false);
+
+    if (activeListToken === editingListToken) {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set("share", editingListToken);
+        url.searchParams.set("name", cleanName);
+        window.history.replaceState({}, "", url.toString());
+      } catch {}
+    }
+
+    await syncListNameToSupabase(editingListToken, cleanName);
+  };
+
+  const handleDeleteList = async (tokenToDelete: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const targetList = lists.find((l) => l.token === tokenToDelete);
+    const targetName = targetList?.name || "リスト";
+    if (!confirm(`「${targetName}」を削除しますか？`)) return;
+
+    let remaining = lists.filter((l) => l.token !== tokenToDelete);
+    let nextActiveToken = activeListToken;
+
+    if (remaining.length === 0) {
+      const defaultToken = crypto.randomUUID();
+      const defaultList: ListInfo = {
+        token: defaultToken,
+        name: "マイリスト",
+        lastUpdated: Date.now(),
+        isOwner: true,
+        reactionCount: 2,
+      };
+      remaining = [defaultList];
+      nextActiveToken = defaultToken;
+    } else if (activeListToken === tokenToDelete) {
+      nextActiveToken = remaining[0].token;
+    }
+
+    setLists(remaining);
+    try {
+      localStorage.setItem(STORAGE_KEY_LISTS, JSON.stringify(remaining));
+    } catch {}
+
+    setItems((prev) =>
+      prev.filter((item) => (item.listId || "") !== tokenToDelete)
+    );
+
+    if (nextActiveToken !== activeListToken) {
+      setActiveListToken(nextActiveToken);
+      const nextList =
+        remaining.find((l) => l.token === nextActiveToken) || remaining[0];
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set("share", nextList.token);
+        url.searchParams.set("name", nextList.name);
+        window.history.replaceState({}, "", url.toString());
+      } catch {}
+      await fetchListItems(nextActiveToken);
+    }
   };
 
   const handleCopyMyShareUrl = () => {
     const origin = window.location.origin;
     const pathname = window.location.pathname;
-    const tokenToShare = activeListToken || myToken;
+    const tokenToShare = activeListToken || lists[0]?.token || "";
     const nameToShare = currentListName;
     const shareUrl = `${origin}${pathname}?share=${tokenToShare}&name=${encodeURIComponent(
       nameToShare
@@ -593,8 +718,8 @@ export default function Home() {
     setCopiedShareUrl(true);
     setTimeout(() => setCopiedShareUrl(false), 2000);
 
-    if (isOwnerActive) {
-      syncListNameToSupabase(myToken, currentListName);
+    if (isOwnerActive && tokenToShare) {
+      syncListNameToSupabase(tokenToShare, currentListName);
     }
   };
 
@@ -610,27 +735,25 @@ export default function Home() {
         const pName = urlObj.searchParams.get("name");
         if (pShare) {
           token = sanitizeInputText(pShare, 100).trim();
-          if (pName) name = sanitizeInputText(decodeURIComponent(pName), 100).trim();
+          if (pName)
+            name = sanitizeInputText(decodeURIComponent(pName), 100).trim();
         }
       }
     } catch {}
 
-    if (token === myToken) {
-      alert("自分のリストURLです。");
-      setIsAddListModalOpen(false);
-      setJoinInputUrl("");
-      setActiveListToken(myToken);
-      return;
-    }
+    if (!token) return;
 
-    const existingIndex = joinedLists.findIndex((l) => l.token === token);
+    const existingIndex = lists.findIndex((l) => l.token === token);
     if (existingIndex >= 0) {
-      const updated = [...joinedLists];
-      if (name && name !== "友達のログ") {
+      if (name && name !== "友達のログ" && name !== lists[existingIndex].name) {
+        const updated = [...lists];
         updated[existingIndex] = { ...updated[existingIndex], name };
+        setLists(updated);
+        try {
+          localStorage.setItem(STORAGE_KEY_LISTS, JSON.stringify(updated));
+        } catch {}
       }
-      setJoinedLists(updated);
-      localStorage.setItem(STORAGE_KEY_JOINED, JSON.stringify(updated));
+      setActiveListToken(token);
     } else {
       const newList: ListInfo = {
         token,
@@ -639,26 +762,25 @@ export default function Home() {
         isOwner: false,
         reactionCount: 1,
       };
-      const updated = [newList, ...joinedLists];
-      setJoinedLists(updated);
-      localStorage.setItem(STORAGE_KEY_JOINED, JSON.stringify(updated));
+      const updated = [newList, ...lists];
+      setLists(updated);
+      try {
+        localStorage.setItem(STORAGE_KEY_LISTS, JSON.stringify(updated));
+      } catch {}
+      setActiveListToken(token);
     }
 
-    setActiveListToken(token);
-    setIsAddListModalOpen(false);
+    setIsJoinListModalOpen(false);
     setJoinInputUrl("");
     setMobileTab("list");
-  };
 
-  const handleRemoveJoinedList = (tokenToRemove: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!confirm("この共有ログを一覧から削除しますか？")) return;
-    const updated = joinedLists.filter((l) => l.token !== tokenToRemove);
-    setJoinedLists(updated);
-    localStorage.setItem(STORAGE_KEY_JOINED, JSON.stringify(updated));
-    if (activeListToken === tokenToRemove) {
-      setActiveListToken(myToken);
-    }
+    try {
+      const activeObj = lists.find((l) => l.token === token) || { name };
+      const url = new URL(window.location.href);
+      url.searchParams.set("share", token);
+      url.searchParams.set("name", activeObj.name);
+      window.history.replaceState({}, "", url.toString());
+    } catch {}
   };
 
   const handleAddReactionToItem = async (itemId: string) => {
@@ -988,9 +1110,17 @@ export default function Home() {
         } catch {}
         return updated;
       });
-      setMyListLastUpdated(Date.now());
+      setLists((prev) => {
+        const updated = prev.map((l) =>
+          l.token === activeListToken ? { ...l, lastUpdated: Date.now() } : l
+        );
+        try {
+          localStorage.setItem(STORAGE_KEY_LISTS, JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
     } else {
-      const currentToken = activeListToken || myToken;
+      const currentToken = activeListToken || lists[0]?.token || "";
       const insertPayload = {
         list_id: currentToken,
         title: cleanTitle,
@@ -1067,7 +1197,15 @@ export default function Home() {
         setItems((prev) => [fallbackItem, ...prev]);
       }
 
-      setMyListLastUpdated(Date.now());
+      setLists((prev) => {
+        const updated = prev.map((l) =>
+          l.token === currentToken ? { ...l, lastUpdated: Date.now() } : l
+        );
+        try {
+          localStorage.setItem(STORAGE_KEY_LISTS, JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
       setInputUrl("");
       setErrorMessage("");
       if (isOwnerActive) {
@@ -1187,14 +1325,27 @@ export default function Home() {
               </div>
               <span className="font-bold tracking-tight text-base">ログ一覧</span>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsAddListModalOpen(true)}
-              className="p-1.5 rounded-xl border border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white transition cursor-pointer"
-              title="秘密のURLを追加"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setIsJoinListModalOpen(true)}
+                className="p-1.5 rounded-xl border border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white transition cursor-pointer"
+                title="秘密の共有URLを追加"
+              >
+                <Share2 className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setNewListName("");
+                  setIsCreateListModalOpen(true);
+                }}
+                className="p-1.5 rounded-xl border border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white transition cursor-pointer"
+                title="新しいマイリストを作成"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           <div className="p-3 border-b border-zinc-800/60 bg-zinc-900/40">
@@ -1218,82 +1369,12 @@ export default function Home() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2.5">
-            <div
-              onClick={() => {
-                setActiveListToken(myToken);
-                setMobileTab("list");
-                try {
-                  const url = new URL(window.location.href);
-                  url.searchParams.set("share", myToken);
-                  url.searchParams.set("name", myListName);
-                  window.history.replaceState({}, "", url.toString());
-                } catch {}
-              }}
-              className={`p-3.5 rounded-3xl border transition cursor-pointer flex items-center justify-between group ${
-                activeListToken === myToken
-                  ? "bg-zinc-900/90 border-orange-500/80 shadow-md ring-1 ring-orange-500/30"
-                  : "bg-zinc-900/60 border-zinc-800/80 hover:bg-zinc-900 hover:border-zinc-700"
-              }`}
-            >
-              <div className="flex flex-col gap-1 min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm text-zinc-100 truncate">
-                    {myListName}
-                  </span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-zinc-800 text-zinc-400 font-medium">
-                    Owner
-                  </span>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsEditingMyName(true);
-                    }}
-                    className="opacity-0 group-hover:opacity-100 p-1 hover:text-orange-400 transition"
-                  >
-                    <Pencil className="w-3 h-3" />
-                  </button>
-                </div>
-                <div className="flex items-center gap-1.5 text-xs">
-                  <span className="font-bold text-orange-500 text-[11px]">
-                    new log
-                  </span>
-                  <span className="text-zinc-500 text-[11px]">
-                    {formatRelativeTime(myListLastUpdated)}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                <div className="flex items-center -space-x-1.5">
-                  <div className="w-7 h-7 rounded-full bg-zinc-800 border-2 border-zinc-950 flex items-center justify-center text-zinc-300">
-                    <Smile className="w-3.5 h-3.5" />
-                  </div>
-                  <div className="w-7 h-7 rounded-full bg-zinc-800 border-2 border-zinc-950 flex items-center justify-center text-orange-400">
-                    <Smile className="w-3.5 h-3.5" />
-                  </div>
-                </div>
-                {activeListToken === myToken && (
-                  <ChevronRight className="w-4 h-4 text-orange-500" />
-                )}
-              </div>
-            </div>
-
-            {joinedLists.map((list) => {
+            {lists.map((list) => {
               const isSelected = activeListToken === list.token;
               return (
                 <div
                   key={list.token}
-                  onClick={() => {
-                    setActiveListToken(list.token);
-                    setMobileTab("list");
-                    try {
-                      const url = new URL(window.location.href);
-                      url.searchParams.set("share", list.token);
-                      url.searchParams.set("name", list.name);
-                      window.history.replaceState({}, "", url.toString());
-                    } catch {}
-                  }}
+                  onClick={() => handleSelectList(list.token)}
                   className={`p-3.5 rounded-3xl border transition cursor-pointer flex items-center justify-between group ${
                     isSelected
                       ? "bg-zinc-900/90 border-orange-500/80 shadow-md ring-1 ring-orange-500/30"
@@ -1305,11 +1386,35 @@ export default function Home() {
                       <span className="font-bold text-sm text-zinc-100 truncate">
                         {list.name}
                       </span>
+                      {list.isOwner ? (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-zinc-800 text-zinc-300 font-medium border border-zinc-700">
+                          Owner
+                        </span>
+                      ) : (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-zinc-800 text-orange-400 font-medium border border-orange-500/30">
+                          Shared
+                        </span>
+                      )}
+                      {list.isOwner && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingListToken(list.token);
+                            setTempListName(list.name);
+                            setIsEditingNameModalOpen(true);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:text-orange-400 transition"
+                          title="リスト名を変更"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                      )}
                       <button
                         type="button"
-                        onClick={(e) => handleRemoveJoinedList(list.token, e)}
-                        className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 text-zinc-600 transition"
-                        title="リストから削除"
+                        onClick={(e) => handleDeleteList(list.token, e)}
+                        className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 text-zinc-500 transition"
+                        title="リストを削除"
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
@@ -1326,9 +1431,14 @@ export default function Home() {
 
                   <div className="flex items-center gap-2 shrink-0">
                     <div className="flex items-center -space-x-1.5">
-                      <div className="w-7 h-7 rounded-full bg-zinc-800 border-2 border-zinc-950 flex items-center justify-center text-zinc-400">
+                      <div className="w-7 h-7 rounded-full bg-zinc-800 border-2 border-zinc-950 flex items-center justify-center text-zinc-300">
                         <Smile className="w-3.5 h-3.5" />
                       </div>
+                      {list.isOwner && (
+                        <div className="w-7 h-7 rounded-full bg-zinc-800 border-2 border-zinc-950 flex items-center justify-center text-orange-400">
+                          <Smile className="w-3.5 h-3.5" />
+                        </div>
+                      )}
                     </div>
                     {isSelected && (
                       <ChevronRight className="w-4 h-4 text-orange-500" />
@@ -1354,7 +1464,11 @@ export default function Home() {
                 <div>
                   <h1 className="text-lg sm:text-xl font-bold tracking-tight text-white flex items-center gap-2">
                     <span>{currentListName}</span>
-                    {!isOwnerActive && (
+                    {isOwnerActive ? (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 font-semibold border border-zinc-700">
+                        Owner
+                      </span>
+                    ) : (
                       <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-800 text-orange-400 font-semibold border border-orange-500/30">
                         共有リスト
                       </span>
@@ -1839,32 +1953,91 @@ export default function Home() {
           }`}
         >
           <Layers className="w-3.5 h-3.5" />
-          <span>ログ ({1 + joinedLists.length})</span>
+          <span>ログ ({lists.length})</span>
         </button>
       </div>
 
-      {isEditingMyName && (
+      {isCreateListModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-sm p-6 shadow-2xl flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-base text-zinc-100">
+                新しいマイリストを作成
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsCreateListModalOpen(false)}
+                className="p-1 text-zinc-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              リスト名を入力してください（例: 自分用、彼女用、ガジェット用など）
+            </p>
+            <input
+              type="text"
+              value={newListName}
+              onChange={(e) => setNewListName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleCreateList();
+                }
+              }}
+              placeholder="例: ガジェット用"
+              autoFocus
+              className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-700 bg-zinc-800 text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+            />
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsCreateListModalOpen(false)}
+                className="px-4 py-2 text-xs font-medium rounded-xl border border-zinc-700 text-zinc-300 hover:bg-zinc-800 transition"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateList}
+                className="px-5 py-2 text-xs font-semibold rounded-xl bg-orange-600 hover:bg-orange-700 text-white transition"
+              >
+                作成する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isEditingNameModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-sm p-5 shadow-2xl flex flex-col gap-4">
             <h3 className="font-bold text-base text-zinc-100">リスト名の変更</h3>
             <input
               type="text"
-              value={tempMyName}
-              onChange={(e) => setTempMyName(e.target.value)}
+              value={tempListName}
+              onChange={(e) => setTempListName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleSaveListName();
+                }
+              }}
               placeholder="例: たろうの欲しいもの"
+              autoFocus
               className="w-full px-3.5 py-2 rounded-xl border border-zinc-700 bg-zinc-800 text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
             />
             <div className="flex items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setIsEditingMyName(false)}
+                onClick={() => setIsEditingNameModalOpen(false)}
                 className="px-3 py-1.5 text-xs font-medium rounded-xl border border-zinc-700 text-zinc-300 hover:bg-zinc-800 transition"
               >
                 キャンセル
               </button>
               <button
                 type="button"
-                onClick={handleSaveMyName}
+                onClick={handleSaveListName}
                 className="px-4 py-1.5 text-xs font-semibold rounded-xl bg-orange-600 hover:bg-orange-700 text-white transition"
               >
                 保存
@@ -1874,7 +2047,7 @@ export default function Home() {
         </div>
       )}
 
-      {isAddListModalOpen && (
+      {isJoinListModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-md p-6 shadow-2xl flex flex-col gap-4">
             <div className="flex items-center justify-between">
@@ -1883,7 +2056,7 @@ export default function Home() {
               </h3>
               <button
                 type="button"
-                onClick={() => setIsAddListModalOpen(false)}
+                onClick={() => setIsJoinListModalOpen(false)}
                 className="p-1 text-zinc-400 hover:text-white"
               >
                 <X className="w-5 h-5" />
@@ -1896,13 +2069,19 @@ export default function Home() {
               type="text"
               value={joinInputUrl}
               onChange={(e) => setJoinInputUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleJoinList();
+                }
+              }}
               placeholder="https://.../?share=xxx&name=..."
               className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-700 bg-zinc-800 text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
             />
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setIsAddListModalOpen(false)}
+                onClick={() => setIsJoinListModalOpen(false)}
                 className="px-4 py-2 text-xs font-medium rounded-xl border border-zinc-700 text-zinc-300 hover:bg-zinc-800 transition"
               >
                 キャンセル

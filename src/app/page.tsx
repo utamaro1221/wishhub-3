@@ -187,7 +187,7 @@ function sanitizeSafeUrl(url?: string | null): string {
     if (parsed.protocol === "https:" || parsed.protocol === "http:") {
       return parsed.toString();
     }
-  } catch {}
+  } catch { }
   return "#";
 }
 
@@ -200,7 +200,7 @@ function sanitizeImageUrl(url?: string | null): string {
     if (parsed.protocol === "https:" || parsed.protocol === "http:") {
       return parsed.toString();
     }
-  } catch {}
+  } catch { }
   return "";
 }
 
@@ -419,7 +419,7 @@ export default function Home() {
                     ? parsed.creators
                     : {},
               };
-            } catch {}
+            } catch { }
           }
         });
         setPermissions(foundPerms);
@@ -453,7 +453,7 @@ export default function Home() {
             if (changed) {
               try {
                 localStorage.setItem(STORAGE_KEY_LISTS, JSON.stringify(updated));
-              } catch {}
+              } catch { }
             }
             return changed ? updated : prev;
           });
@@ -468,7 +468,7 @@ export default function Home() {
               url.searchParams.set("name", activeTokenName);
               window.history.replaceState({}, "", url.toString());
             }
-          } catch {}
+          } catch { }
         }
 
         const mapped: WishItem[] = data
@@ -527,7 +527,7 @@ export default function Home() {
           loadedLists = parsed;
         }
       }
-    } catch {}
+    } catch { }
 
     if (loadedLists.length === 0) {
       let legacyToken = localStorage.getItem(STORAGE_KEY_TOKEN);
@@ -563,7 +563,7 @@ export default function Home() {
             });
           }
         }
-      } catch {}
+      } catch { }
     }
 
     const searchParams = new URLSearchParams(window.location.search);
@@ -603,13 +603,13 @@ export default function Home() {
         url.searchParams.set("share", activeObj.token);
         url.searchParams.set("name", activeObj.name);
         window.history.replaceState({}, "", url.toString());
-      } catch {}
+      } catch { }
     }
 
     setLists(loadedLists);
     try {
       localStorage.setItem(STORAGE_KEY_LISTS, JSON.stringify(loadedLists));
-    } catch {}
+    } catch { }
 
     setActiveListToken(initialActive);
 
@@ -629,7 +629,7 @@ export default function Home() {
               }))
           );
         }
-      } catch {}
+      } catch { }
     }
 
     fetchListItems(initialActive);
@@ -673,7 +673,7 @@ export default function Home() {
     if (!isLoaded) return;
     try {
       localStorage.setItem(STORAGE_KEY_ITEMS, JSON.stringify(items));
-    } catch {}
+    } catch { }
   }, [items, isLoaded]);
 
   const activeList = useMemo(() => {
@@ -728,7 +728,7 @@ export default function Home() {
         url.searchParams.set("share", target.token);
         url.searchParams.set("name", target.name);
         window.history.replaceState({}, "", url.toString());
-      } catch {}
+      } catch { }
     }
   };
 
@@ -742,7 +742,7 @@ export default function Home() {
 
     try {
       localStorage.setItem(STORAGE_KEY_NICKNAME, cleanName);
-    } catch {}
+    } catch { }
 
     const filteredPending = permissions.pending.filter(
       (u) => u.id !== myClientId
@@ -817,7 +817,7 @@ export default function Home() {
     setLists(updatedLists);
     try {
       localStorage.setItem(STORAGE_KEY_LISTS, JSON.stringify(updatedLists));
-    } catch {}
+    } catch { }
 
     setActiveListToken(newToken);
     setIsCreateListModalOpen(false);
@@ -829,7 +829,7 @@ export default function Home() {
       url.searchParams.set("share", newToken);
       url.searchParams.set("name", cleanName);
       window.history.replaceState({}, "", url.toString());
-    } catch {}
+    } catch { }
 
     await syncListNameToSupabase(newToken, cleanName);
     await fetchListItems(newToken);
@@ -847,7 +847,7 @@ export default function Home() {
     setLists(updatedLists);
     try {
       localStorage.setItem(STORAGE_KEY_LISTS, JSON.stringify(updatedLists));
-    } catch {}
+    } catch { }
     setIsEditingNameModalOpen(false);
 
     if (activeListToken === editingListToken) {
@@ -856,7 +856,7 @@ export default function Home() {
         url.searchParams.set("share", editingListToken);
         url.searchParams.set("name", cleanName);
         window.history.replaceState({}, "", url.toString());
-      } catch {}
+      } catch { }
     }
 
     await syncListNameToSupabase(editingListToken, cleanName);
@@ -889,7 +889,7 @@ export default function Home() {
     setLists(remaining);
     try {
       localStorage.setItem(STORAGE_KEY_LISTS, JSON.stringify(remaining));
-    } catch {}
+    } catch { }
 
     setItems((prev) =>
       prev.filter((item) => (item.listId || "") !== tokenToDelete)
@@ -904,7 +904,7 @@ export default function Home() {
         url.searchParams.set("share", nextList.token);
         url.searchParams.set("name", nextList.name);
         window.history.replaceState({}, "", url.toString());
-      } catch {}
+      } catch { }
       await fetchListItems(nextActiveToken);
     }
   };
@@ -942,7 +942,7 @@ export default function Home() {
             name = sanitizeInputText(decodeURIComponent(pName), 100).trim();
         }
       }
-    } catch {}
+    } catch { }
 
     if (!token) return;
 
@@ -954,7 +954,7 @@ export default function Home() {
         setLists(updated);
         try {
           localStorage.setItem(STORAGE_KEY_LISTS, JSON.stringify(updated));
-        } catch {}
+        } catch { }
       }
       setActiveListToken(token);
     } else {
@@ -969,7 +969,7 @@ export default function Home() {
       setLists(updated);
       try {
         localStorage.setItem(STORAGE_KEY_LISTS, JSON.stringify(updated));
-      } catch {}
+      } catch { }
       setActiveListToken(token);
     }
 
@@ -983,7 +983,7 @@ export default function Home() {
       url.searchParams.set("share", token);
       url.searchParams.set("name", activeObj.name);
       window.history.replaceState({}, "", url.toString());
-    } catch {}
+    } catch { }
   };
 
   const handleAddReactionToItem = async (itemId: string) => {
@@ -1002,7 +1002,7 @@ export default function Home() {
         .from("wish_items")
         .update({ reactions: nextReactions })
         .eq("id", itemId);
-    } catch {}
+    } catch { }
   };
 
   const handleOpenExternalUrl = (e: React.MouseEvent, url: string) => {
@@ -1013,14 +1013,14 @@ export default function Home() {
         if (
           !confirm(
             "主要ECサイト以外の外部URL（" +
-              parsed.hostname +
-              "）を開こうとしています。フィッシングや詐欺サイトにご注意ください。移動しますか？"
+            parsed.hostname +
+            "）を開こうとしています。フィッシングや詐欺サイトにご注意ください。移動しますか？"
           )
         ) {
           e.preventDefault();
         }
       }
-    } catch {}
+    } catch { }
   };
 
   const handleScrape = async () => {
@@ -1085,7 +1085,7 @@ export default function Home() {
           if (errData && errData.error) {
             errorDetail = errData.error;
           }
-        } catch {}
+        } catch { }
 
         if (res.status === 400) {
           setIsSecurityError(true);
@@ -1102,7 +1102,7 @@ export default function Home() {
         try {
           const parsed = new URL(inputUrl.trim());
           siteName = parsed.hostname.replace(/^www\./i, "");
-        } catch {}
+        } catch { }
 
         setIsImageError(false);
         setFormData({
@@ -1157,7 +1157,7 @@ export default function Home() {
         const parsed = new URL(inputUrl.trim());
         siteName = parsed.hostname.replace(/^www\./i, "");
       }
-    } catch {}
+    } catch { }
 
     setIsImageError(false);
     setFormData({
@@ -1230,8 +1230,8 @@ export default function Home() {
         if (
           !confirm(
             "このURL（" +
-              parsed.hostname +
-              "）は主要ショッピングサイト一覧に含まれていません。信頼できるサイトであることを確認してください。登録を続行しますか？"
+            parsed.hostname +
+            "）は主要ショッピングサイト一覧に含まれていません。信頼できるサイトであることを確認してください。登録を続行しますか？"
           )
         ) {
           return;
@@ -1249,7 +1249,7 @@ export default function Home() {
       try {
         const parsed = new URL(formData.productUrl.trim());
         derivedSiteName = parsed.hostname.replace(/^www\./i, "");
-      } catch {}
+      } catch { }
     }
 
     const cleanTitle = sanitizeInputText(formData.title, 200).trim();
@@ -1296,21 +1296,21 @@ export default function Home() {
         const updated = prev.map((item) =>
           item.id === editingItemId
             ? {
-                ...item,
-                title: cleanTitle,
-                imageUrl: cleanImageUrl,
-                siteName: cleanSiteName,
-                productUrl: cleanProductUrl,
-                price: parsedPrice,
-                priority: formData.priority,
-                memo: cleanMemo,
-                category: cleanCategory,
-              }
+              ...item,
+              title: cleanTitle,
+              imageUrl: cleanImageUrl,
+              siteName: cleanSiteName,
+              productUrl: cleanProductUrl,
+              price: parsedPrice,
+              priority: formData.priority,
+              memo: cleanMemo,
+              category: cleanCategory,
+            }
             : item
         );
         try {
           localStorage.setItem(STORAGE_KEY_ITEMS, JSON.stringify(updated));
-        } catch {}
+        } catch { }
         return updated;
       });
       setLists((prev) => {
@@ -1319,7 +1319,7 @@ export default function Home() {
         );
         try {
           localStorage.setItem(STORAGE_KEY_LISTS, JSON.stringify(updated));
-        } catch {}
+        } catch { }
         return updated;
       });
     } else {
@@ -1423,7 +1423,7 @@ export default function Home() {
         );
         try {
           localStorage.setItem(STORAGE_KEY_LISTS, JSON.stringify(updated));
-        } catch {}
+        } catch { }
         return updated;
       });
       setInputUrl("");
@@ -1543,9 +1543,8 @@ export default function Home() {
     <div className="min-h-screen bg-black text-zinc-100 flex flex-col antialiased">
       <div className="flex-1 flex overflow-hidden">
         <aside
-          className={`w-full lg:w-80 shrink-0 border-r border-zinc-800/80 bg-zinc-950 flex flex-col h-screen sticky top-0 ${
-            mobileTab === "logs" ? "flex" : "hidden lg:flex"
-          }`}
+          className={`w-full lg:w-80 shrink-0 border-r border-zinc-800/80 bg-zinc-950 flex flex-col h-screen sticky top-0 ${mobileTab === "logs" ? "flex" : "hidden lg:flex"
+            }`}
         >
           <div className="p-4 border-b border-zinc-800/80 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -1604,11 +1603,10 @@ export default function Home() {
                 <div
                   key={list.token}
                   onClick={() => handleSelectList(list.token)}
-                  className={`p-3.5 rounded-3xl border transition cursor-pointer flex items-center justify-between group ${
-                    isSelected
-                      ? "bg-zinc-900/90 border-orange-500/80 shadow-md ring-1 ring-orange-500/30"
-                      : "bg-zinc-900/60 border-zinc-800/80 hover:bg-zinc-900 hover:border-zinc-700"
-                  }`}
+                  className={`p-3.5 rounded-3xl border transition cursor-pointer flex items-center justify-between group ${isSelected
+                    ? "bg-zinc-900/90 border-orange-500/80 shadow-md ring-1 ring-orange-500/30"
+                    : "bg-zinc-900/60 border-zinc-800/80 hover:bg-zinc-900 hover:border-zinc-700"
+                    }`}
                 >
                   <div className="flex flex-col gap-1 min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -1680,9 +1678,8 @@ export default function Home() {
         </aside>
 
         <div
-          className={`flex-1 flex flex-col min-w-0 bg-zinc-950 h-screen overflow-y-auto ${
-            mobileTab === "list" ? "flex" : "hidden lg:flex"
-          }`}
+          className={`flex-1 flex flex-col min-w-0 bg-zinc-950 h-screen overflow-y-auto ${mobileTab === "list" ? "flex" : "hidden lg:flex"
+            }`}
         >
           <header className="border-b border-zinc-800/80 bg-zinc-950/80 backdrop-blur sticky top-0 z-20">
             <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
@@ -1894,11 +1891,10 @@ export default function Home() {
 
                 {errorMessage && (
                   <div
-                    className={`mt-4 p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                      isSecurityError
-                        ? "bg-red-950/70 border-red-800/80 text-red-200 shadow-md ring-1 ring-red-500/30"
-                        : "bg-red-950/40 border-red-900/50 text-red-400"
-                    }`}
+                    className={`mt-4 p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${isSecurityError
+                      ? "bg-red-950/70 border-red-800/80 text-red-200 shadow-md ring-1 ring-red-500/30"
+                      : "bg-red-950/40 border-red-900/50 text-red-400"
+                      }`}
                   >
                     <div className="flex items-center gap-2.5 text-sm font-medium">
                       <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
@@ -1932,33 +1928,30 @@ export default function Home() {
                       <button
                         type="button"
                         onClick={() => setFilter("all")}
-                        className={`px-3 py-1 text-xs font-semibold rounded-lg transition cursor-pointer ${
-                          filter === "all"
-                            ? "bg-zinc-800 text-orange-400 shadow-xs"
-                            : "text-zinc-400 hover:text-zinc-200"
-                        }`}
+                        className={`px-3 py-1 text-xs font-semibold rounded-lg transition cursor-pointer ${filter === "all"
+                          ? "bg-zinc-800 text-orange-400 shadow-xs"
+                          : "text-zinc-400 hover:text-zinc-200"
+                          }`}
                       >
                         すべて
                       </button>
                       <button
                         type="button"
                         onClick={() => setFilter("unpurchased")}
-                        className={`px-3 py-1 text-xs font-semibold rounded-lg transition cursor-pointer ${
-                          filter === "unpurchased"
-                            ? "bg-zinc-800 text-orange-400 shadow-xs"
-                            : "text-zinc-400 hover:text-zinc-200"
-                        }`}
+                        className={`px-3 py-1 text-xs font-semibold rounded-lg transition cursor-pointer ${filter === "unpurchased"
+                          ? "bg-zinc-800 text-orange-400 shadow-xs"
+                          : "text-zinc-400 hover:text-zinc-200"
+                          }`}
                       >
                         未購入
                       </button>
                       <button
                         type="button"
                         onClick={() => setFilter("purchased")}
-                        className={`px-3 py-1 text-xs font-semibold rounded-lg transition cursor-pointer ${
-                          filter === "purchased"
-                            ? "bg-zinc-800 text-orange-400 shadow-xs"
-                            : "text-zinc-400 hover:text-zinc-200"
-                        }`}
+                        className={`px-3 py-1 text-xs font-semibold rounded-lg transition cursor-pointer ${filter === "purchased"
+                          ? "bg-zinc-800 text-orange-400 shadow-xs"
+                          : "text-zinc-400 hover:text-zinc-200"
+                          }`}
                       >
                         購入済み
                       </button>
@@ -2065,226 +2058,223 @@ export default function Home() {
                       permissions.creators?.[item.id] || currentListName;
                     return (
                       <div
-                      key={item.id}
-                      className={`group relative flex flex-col justify-between bg-zinc-900/90 border rounded-3xl overflow-hidden transition-all duration-200 hover:shadow-lg ${
-                        item.isPurchased
+                        key={item.id}
+                        className={`group relative flex flex-col justify-between bg-zinc-900/90 border rounded-3xl overflow-hidden transition-all duration-200 hover:shadow-lg ${item.isPurchased
                           ? "border-zinc-800/80 opacity-60 bg-zinc-900/40"
                           : "border-zinc-800/80 hover:border-zinc-700 shadow-sm"
-                      }`}
-                    >
-                      <div>
-                        {sanitizeSafeUrl(item.productUrl) !== "#" ? (
-                          <a
-                            href={sanitizeSafeUrl(item.productUrl)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => handleOpenExternalUrl(e, item.productUrl)}
-                            className="block relative aspect-video w-full bg-zinc-950 overflow-hidden cursor-pointer"
-                            title={`${item.title} の商品ページを開く`}
-                          >
-                            {sanitizeImageUrl(item.imageUrl) ? (
-                              <img
-                                src={sanitizeImageUrl(item.imageUrl)}
-                                alt={item.title}
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-zinc-600">
-                                <ImageOff className="w-8 h-8" />
-                                <span className="text-xs">No image</span>
-                              </div>
-                            )}
-                            <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap">
-                              {item.siteName && (
-                                <span className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-black/80 backdrop-blur text-white shadow-sm border border-zinc-800">
-                                  {item.siteName}
-                                </span>
-                              )}
-                              {item.category && item.category !== "その他" && (
-                                <span className="px-2 py-0.5 text-[11px] font-semibold rounded-lg bg-orange-600/80 backdrop-blur text-white shadow-sm">
-                                  {item.category}
-                                </span>
-                              )}
-                            </div>
-                          </a>
-                        ) : (
-                          <div className="relative aspect-video w-full bg-zinc-950 overflow-hidden flex items-center justify-center">
-                            {sanitizeImageUrl(item.imageUrl) ? (
-                              <img
-                                src={sanitizeImageUrl(item.imageUrl)}
-                                alt={item.title}
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                              />
-                            ) : (
-                              <div className="flex flex-col items-center gap-1 text-zinc-600">
-                                <ImageOff className="w-8 h-8" />
-                                <span className="text-xs">No image</span>
-                              </div>
-                            )}
-                            <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap">
-                              {item.siteName && (
-                                <span className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-black/80 backdrop-blur text-white shadow-sm border border-zinc-800">
-                                  {item.siteName}
-                                </span>
-                              )}
-                              {item.category && item.category !== "その他" && (
-                                <span className="px-2 py-0.5 text-[11px] font-semibold rounded-lg bg-orange-600/80 backdrop-blur text-white shadow-sm">
-                                  {item.category}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="p-4 flex flex-col gap-2.5">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-1">
-                              {[1, 2, 3, 4, 5].map((star) => (
-                                <Star
-                                  key={star}
-                                  className={`w-3.5 h-3.5 ${
-                                    star <= item.priority
-                                      ? "text-amber-400 fill-amber-400"
-                                      : "text-zinc-700"
-                                  }`}
-                                />
-                              ))}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {creatorName && (
-                                <span
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 text-[11px] font-medium border border-zinc-700/60"
-                                  title={`追加: ${creatorName}`}
-                                >
-                                  <User className="w-3 h-3 text-orange-400" />
-                                  <span className="max-w-[100px] truncate">
-                                    追加: {creatorName}
-                                  </span>
-                                </span>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => handleAddReactionToItem(item.id)}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-medium transition cursor-pointer"
-                                title="いいね！"
-                              >
-                                <Smile className="w-3.5 h-3.5 text-orange-400" />
-                                <span>{item.reactions || 0}</span>
-                              </button>
-                            </div>
-                          </div>
-
-                          <h3
-                            className={`font-semibold text-sm line-clamp-2 ${
-                              item.isPurchased
-                                ? "line-through text-zinc-500"
-                                : "text-zinc-100"
-                            }`}
-                            title={item.title}
-                          >
-                            {item.title || "無題のアイテム"}
-                          </h3>
-
-                          {item.price !== null && (
-                            <div className="text-base font-bold text-orange-400">
-                              ¥{item.price.toLocaleString()}
-                            </div>
-                          )}
-
-                          {item.memo && (
-                            <p className="text-xs text-zinc-400 bg-zinc-950/60 p-2.5 rounded-2xl border border-zinc-800 line-clamp-3 whitespace-pre-wrap">
-                              {item.memo}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="p-4 pt-0 mt-auto flex items-center justify-between gap-2 border-t border-zinc-800/80 pt-3">
-                        {canEdit ? (
-                          <button
-                            type="button"
-                            onClick={() => handleTogglePurchased(item.id)}
-                            className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-xl border border-zinc-800 hover:bg-zinc-800 transition cursor-pointer text-zinc-300"
-                          >
-                            {item.isPurchased ? (
-                              <>
-                                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                                <span>購入済み</span>
-                              </>
-                            ) : (
-                              <>
-                                <Circle className="w-4 h-4 text-zinc-500" />
-                                <span>未購入</span>
-                              </>
-                            )}
-                          </button>
-                        ) : (
-                          <div className="text-xs text-zinc-500 flex items-center gap-1">
-                            {item.isPurchased ? (
-                              <span className="text-emerald-500 font-medium">
-                                ● 購入済み
-                              </span>
-                            ) : (
-                              <span>○ 未購入</span>
-                            )}
-                          </div>
-                        )}
-
-                        <div className="flex items-center gap-1">
-                          {item.productUrl && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleCopyUrl(item.id, item.productUrl)
-                              }
-                              className="inline-flex items-center justify-center p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition cursor-pointer"
-                              title="URLをコピー"
-                            >
-                              {copiedId === item.id ? (
-                                <Check className="w-4 h-4 text-emerald-500" />
-                              ) : (
-                                <Copy className="w-4 h-4" />
-                              )}
-                            </button>
-                          )}
-                          {canEdit && (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEditModal(item)}
-                              className="inline-flex items-center justify-center p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition cursor-pointer"
-                              title="編集"
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </button>
-                          )}
+                          }`}
+                      >
+                        <div>
                           {sanitizeSafeUrl(item.productUrl) !== "#" ? (
                             <a
                               href={sanitizeSafeUrl(item.productUrl)}
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={(e) => handleOpenExternalUrl(e, item.productUrl)}
-                              className="inline-flex items-center justify-center p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
-                              title="商品を見る"
+                              className="block relative aspect-video w-full bg-zinc-950 overflow-hidden cursor-pointer"
+                              title={`${item.title} の商品ページを開く`}
                             >
-                              <ExternalLink className="w-4 h-4" />
+                              {sanitizeImageUrl(item.imageUrl) ? (
+                                <img
+                                  src={sanitizeImageUrl(item.imageUrl)}
+                                  alt={item.title}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-zinc-600">
+                                  <ImageOff className="w-8 h-8" />
+                                  <span className="text-xs">No image</span>
+                                </div>
+                              )}
+                              <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap">
+                                {item.siteName && (
+                                  <span className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-black/80 backdrop-blur text-white shadow-sm border border-zinc-800">
+                                    {item.siteName}
+                                  </span>
+                                )}
+                                {item.category && item.category !== "その他" && (
+                                  <span className="px-2 py-0.5 text-[11px] font-semibold rounded-lg bg-orange-600/80 backdrop-blur text-white shadow-sm">
+                                    {item.category}
+                                  </span>
+                                )}
+                              </div>
                             </a>
-                          ) : null}
-                          {canEdit && (
+                          ) : (
+                            <div className="relative aspect-video w-full bg-zinc-950 overflow-hidden flex items-center justify-center">
+                              {sanitizeImageUrl(item.imageUrl) ? (
+                                <img
+                                  src={sanitizeImageUrl(item.imageUrl)}
+                                  alt={item.title}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                />
+                              ) : (
+                                <div className="flex flex-col items-center gap-1 text-zinc-600">
+                                  <ImageOff className="w-8 h-8" />
+                                  <span className="text-xs">No image</span>
+                                </div>
+                              )}
+                              <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap">
+                                {item.siteName && (
+                                  <span className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-black/80 backdrop-blur text-white shadow-sm border border-zinc-800">
+                                    {item.siteName}
+                                  </span>
+                                )}
+                                {item.category && item.category !== "その他" && (
+                                  <span className="px-2 py-0.5 text-[11px] font-semibold rounded-lg bg-orange-600/80 backdrop-blur text-white shadow-sm">
+                                    {item.category}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="p-4 flex flex-col gap-2.5">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1">
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <Star
+                                    key={star}
+                                    className={`w-3.5 h-3.5 ${star <= item.priority
+                                      ? "text-amber-400 fill-amber-400"
+                                      : "text-zinc-700"
+                                      }`}
+                                  />
+                                ))}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {creatorName && (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 text-[11px] font-medium border border-zinc-700/60"
+                                    title={`追加: ${creatorName}`}
+                                  >
+                                    <User className="w-3 h-3 text-orange-400" />
+                                    <span className="max-w-[100px] truncate">
+                                      追加: {creatorName}
+                                    </span>
+                                  </span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddReactionToItem(item.id)}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-medium transition cursor-pointer"
+                                  title="いいね！"
+                                >
+                                  <Smile className="w-3.5 h-3.5 text-orange-400" />
+                                  <span>{item.reactions || 0}</span>
+                                </button>
+                              </div>
+                            </div>
+
+                            <h3
+                              className={`font-semibold text-sm line-clamp-2 ${item.isPurchased
+                                ? "line-through text-zinc-500"
+                                : "text-zinc-100"
+                                }`}
+                              title={item.title}
+                            >
+                              {item.title || "無題のアイテム"}
+                            </h3>
+
+                            {item.price !== null && (
+                              <div className="text-base font-bold text-orange-400">
+                                ¥{item.price.toLocaleString()}
+                              </div>
+                            )}
+
+                            {item.memo && (
+                              <p className="text-xs text-zinc-400 bg-zinc-950/60 p-2.5 rounded-2xl border border-zinc-800 line-clamp-3 whitespace-pre-wrap">
+                                {item.memo}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="p-4 pt-0 mt-auto flex items-center justify-between gap-2 border-t border-zinc-800/80 pt-3">
+                          {canEdit ? (
                             <button
                               type="button"
-                              onClick={() => handleDeleteItem(item.id)}
-                              className="inline-flex items-center justify-center p-2 rounded-xl text-zinc-500 hover:text-red-400 hover:bg-red-950/30 transition cursor-pointer"
-                              title="削除"
+                              onClick={() => handleTogglePurchased(item.id)}
+                              className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-xl border border-zinc-800 hover:bg-zinc-800 transition cursor-pointer text-zinc-300"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              {item.isPurchased ? (
+                                <>
+                                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                                  <span>購入済み</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Circle className="w-4 h-4 text-zinc-500" />
+                                  <span>未購入</span>
+                                </>
+                              )}
                             </button>
+                          ) : (
+                            <div className="text-xs text-zinc-500 flex items-center gap-1">
+                              {item.isPurchased ? (
+                                <span className="text-emerald-500 font-medium">
+                                  ● 購入済み
+                                </span>
+                              ) : (
+                                <span>○ 未購入</span>
+                              )}
+                            </div>
                           )}
+
+                          <div className="flex items-center gap-1">
+                            {item.productUrl && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleCopyUrl(item.id, item.productUrl)
+                                }
+                                className="inline-flex items-center justify-center p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition cursor-pointer"
+                                title="URLをコピー"
+                              >
+                                {copiedId === item.id ? (
+                                  <Check className="w-4 h-4 text-emerald-500" />
+                                ) : (
+                                  <Copy className="w-4 h-4" />
+                                )}
+                              </button>
+                            )}
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditModal(item)}
+                                className="inline-flex items-center justify-center p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition cursor-pointer"
+                                title="編集"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                            )}
+                            {sanitizeSafeUrl(item.productUrl) !== "#" ? (
+                              <a
+                                href={sanitizeSafeUrl(item.productUrl)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => handleOpenExternalUrl(e, item.productUrl)}
+                                className="inline-flex items-center justify-center p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
+                                title="商品を見る"
+                              >
+                                <ExternalLink className="w-4 h-4" />
+                              </a>
+                            ) : null}
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteItem(item.id)}
+                                className="inline-flex items-center justify-center p-2 rounded-xl text-zinc-500 hover:text-red-400 hover:bg-red-950/30 transition cursor-pointer"
+                                title="削除"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
               )}
             </section>
           </main>
@@ -2295,11 +2285,10 @@ export default function Home() {
         <button
           type="button"
           onClick={() => setMobileTab("list")}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold transition ${
-            mobileTab === "list"
-              ? "bg-orange-600 text-white shadow-sm"
-              : "text-zinc-400 hover:text-white"
-          }`}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold transition ${mobileTab === "list"
+            ? "bg-orange-600 text-white shadow-sm"
+            : "text-zinc-400 hover:text-white"
+            }`}
         >
           <Sparkles className="w-3.5 h-3.5" />
           <span>マイリスト</span>
@@ -2307,11 +2296,10 @@ export default function Home() {
         <button
           type="button"
           onClick={() => setMobileTab("logs")}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold transition ${
-            mobileTab === "logs"
-              ? "bg-orange-600 text-white shadow-sm"
-              : "text-zinc-400 hover:text-white"
-          }`}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold transition ${mobileTab === "logs"
+            ? "bg-orange-600 text-white shadow-sm"
+            : "text-zinc-400 hover:text-white"
+            }`}
         >
           <Layers className="w-3.5 h-3.5" />
           <span>ログ ({lists.length})</span>
@@ -2659,7 +2647,7 @@ export default function Home() {
                       if (nextUrl.trim()) {
                         site = new URL(nextUrl.trim()).hostname.replace(/^www\./i, "");
                       }
-                    } catch {}
+                    } catch { }
                     setFormData({
                       ...formData,
                       productUrl: nextUrl,
@@ -2742,11 +2730,10 @@ export default function Home() {
                       className="p-1 focus:outline-none cursor-pointer"
                     >
                       <Star
-                        className={`w-6 h-6 transition ${
-                          star <= formData.priority
-                            ? "text-amber-400 fill-amber-400"
-                            : "text-zinc-700"
-                        }`}
+                        className={`w-6 h-6 transition ${star <= formData.priority
+                          ? "text-amber-400 fill-amber-400"
+                          : "text-zinc-700"
+                          }`}
                       />
                     </button>
                   ))}

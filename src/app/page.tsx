@@ -26,6 +26,9 @@ import {
   ChevronRight,
   Share2,
   Layers,
+  Users,
+  UserPlus,
+  Clock,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -63,6 +66,16 @@ interface ListInfo {
   reactionCount: number;
 }
 
+interface CollaboratorUser {
+  id: string;
+  name: string;
+}
+
+interface PermissionsData {
+  pending: CollaboratorUser[];
+  approved: CollaboratorUser[];
+}
+
 type FilterType = "all" | "unpurchased" | "purchased";
 type SortType = "newest" | "priority" | "price-asc" | "price-desc";
 type MobileTab = "list" | "logs";
@@ -72,6 +85,17 @@ const STORAGE_KEY_LISTS = "wishhub_lists_v4";
 const STORAGE_KEY_TOKEN = "wishhub_my_list_token";
 const STORAGE_KEY_NAME = "wishhub_my_list_name";
 const STORAGE_KEY_JOINED = "wishhub_joined_lists";
+const STORAGE_KEY_CLIENT_ID = "wishhub_client_id";
+
+function isMetaCategory(category?: string | null): boolean {
+  if (!category) return false;
+  return (
+    category === "__LIST_META__" ||
+    category === "__list_meta__" ||
+    category === "__PERMISSIONS_META__" ||
+    category === "__permissions_meta__"
+  );
+}
 
 const CATEGORIES = [
   "すべて",
@@ -200,6 +224,14 @@ function sanitizeInputText(input: string, maxLength = 1000): string {
 export default function Home() {
   const [lists, setLists] = useState<ListInfo[]>([]);
   const [activeListToken, setActiveListToken] = useState("");
+  const [myClientId, setMyClientId] = useState("");
+  const [permissions, setPermissions] = useState<PermissionsData>({
+    pending: [],
+    approved: [],
+  });
+  const [isRequestEditModalOpen, setIsRequestEditModalOpen] = useState(false);
+  const [requestNickname, setRequestNickname] = useState("");
+  const [isManageMembersModalOpen, setIsManageMembersModalOpen] = useState(false);
 
   const [items, setItems] = useState<WishItem[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -234,6 +266,60 @@ export default function Home() {
     if (diff < 3600) return `${Math.floor(diff / 60)}分前`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}時間前`;
     return `${Math.floor(diff / 86400)}日前`;
+  };
+
+  const savePermissionsToSupabase = async (
+    token: string,
+    newPermissions: PermissionsData
+  ) => {
+    if (!token) return;
+    setPermissions(newPermissions);
+    const jsonStr = JSON.stringify(newPermissions);
+    try {
+      const { data: existingMeta, error: selectError } = await supabase
+        .from("wish_items")
+        .select("id")
+        .eq("list_id", token)
+        .in("category", ["__PERMISSIONS_META__", "__permissions_meta__"])
+        .maybeSingle();
+
+      if (selectError) {
+        console.error("権限メタ取得エラー:", selectError.message);
+      }
+
+      if (existingMeta?.id) {
+        const { error: updateError } = await supabase
+          .from("wish_items")
+          .update({
+            title: "__PERMISSIONS_META__",
+            memo: jsonStr,
+            price: 0,
+            category: "__PERMISSIONS_META__",
+          })
+          .eq("id", existingMeta.id);
+        if (updateError) {
+          console.error("権限メタ更新エラー:", updateError.message);
+        }
+      } else {
+        const { error: insertError } = await supabase.from("wish_items").insert({
+          list_id: token,
+          title: "__PERMISSIONS_META__",
+          image_url: "",
+          site_name: "",
+          product_url: "",
+          price: 0,
+          priority: 0,
+          memo: jsonStr,
+          category: "__PERMISSIONS_META__",
+          is_purchased: false,
+        });
+        if (insertError) {
+          console.error("権限メタ挿入エラー:", insertError.message);
+        }
+      }
+    } catch (err) {
+      console.error("権限メタ同期例外:", err);
+    }
   };
 
   const syncListNameToSupabase = async (token: string, name: string) => {
@@ -301,6 +387,7 @@ export default function Home() {
 
       if (data) {
         const metaMap = new Map<string, string>();
+        let foundPerms: PermissionsData = { pending: [], approved: [] };
         data.forEach((d: any) => {
           if (
             (d.category === "__LIST_META__" || d.category === "__list_meta__") &&
@@ -309,7 +396,21 @@ export default function Home() {
           ) {
             metaMap.set(d.list_id, sanitizeInputText(d.title, 100));
           }
+          if (
+            (d.category === "__PERMISSIONS_META__" ||
+              d.category === "__permissions_meta__") &&
+            d.list_id === targetToken
+          ) {
+            try {
+              const parsed = JSON.parse(d.memo || "{}");
+              foundPerms = {
+                pending: Array.isArray(parsed.pending) ? parsed.pending : [],
+                approved: Array.isArray(parsed.approved) ? parsed.approved : [],
+              };
+            } catch {}
+          }
         });
+        setPermissions(foundPerms);
 
         if (metaMap.size > 0) {
           setLists((prev) => {
@@ -361,9 +462,7 @@ export default function Home() {
         const mapped: WishItem[] = data
           .filter((d: any) => {
             const listId = d.list_id || targetToken;
-            const isMeta =
-              d.category === "__LIST_META__" || d.category === "__list_meta__";
-            return listId === targetToken && !isMeta;
+            return listId === targetToken && !isMetaCategory(d.category);
           })
           .map((d: any) => ({
             id: String(d.id),
@@ -399,6 +498,13 @@ export default function Home() {
 
   useEffect(() => {
     setMounted(true);
+
+    let clientId = localStorage.getItem(STORAGE_KEY_CLIENT_ID);
+    if (!clientId) {
+      clientId = crypto.randomUUID();
+      localStorage.setItem(STORAGE_KEY_CLIENT_ID, clientId);
+    }
+    setMyClientId(clientId);
 
     let loadedLists: ListInfo[] = [];
     try {
@@ -502,11 +608,7 @@ export default function Home() {
         if (Array.isArray(parsed)) {
           setItems(
             parsed
-              .filter(
-                (item) =>
-                  item.category !== "__LIST_META__" &&
-                  item.category !== "__list_meta__"
-              )
+              .filter((item) => !isMetaCategory(item.category))
               .map((item) => ({
                 ...item,
                 listId: item.listId || initialActive,
@@ -537,10 +639,7 @@ export default function Home() {
         },
         (payload: any) => {
           const rec = payload.new || payload.old;
-          const isMeta =
-            rec &&
-            (rec.category === "__LIST_META__" ||
-              rec.category === "__list_meta__");
+          const isMeta = rec && isMetaCategory(rec.category);
           if (
             !rec ||
             !rec.list_id ||
@@ -571,20 +670,31 @@ export default function Home() {
 
   const isOwnerActive = Boolean(activeList?.isOwner);
 
+  const isApprovedCollaborator = useMemo(() => {
+    if (!myClientId) return false;
+    return permissions.approved.some((u) => u.id === myClientId);
+  }, [permissions.approved, myClientId]);
+
+  const isPendingCollaborator = useMemo(() => {
+    if (!myClientId) return false;
+    return permissions.pending.some((u) => u.id === myClientId);
+  }, [permissions.pending, myClientId]);
+
+  const canEdit = isOwnerActive || isApprovedCollaborator;
+
   const currentListName = activeList?.name || "マイリスト";
 
   const activeItems = useMemo(() => {
     const currentToken = activeListToken || lists[0]?.token || "";
     return items.filter(
       (i) =>
-        (i.listId || "") === currentToken &&
-        i.category !== "__LIST_META__" &&
-        i.category !== "__list_meta__"
+        (i.listId || "") === currentToken && !isMetaCategory(i.category)
     );
   }, [items, activeListToken, lists]);
 
   const handleSelectList = (targetToken: string) => {
     setActiveListToken(targetToken);
+    setPermissions({ pending: [], approved: [] });
     setMobileTab("list");
     const target = lists.find((l) => l.token === targetToken);
     if (target) {
@@ -595,6 +705,62 @@ export default function Home() {
         window.history.replaceState({}, "", url.toString());
       } catch {}
     }
+  };
+
+  const handleSendEditRequest = async () => {
+    const cleanName = sanitizeInputText(requestNickname, 50).trim();
+    if (!cleanName || !myClientId || !activeListToken) return;
+
+    const filteredPending = permissions.pending.filter(
+      (u) => u.id !== myClientId
+    );
+    const filteredApproved = permissions.approved.filter(
+      (u) => u.id !== myClientId
+    );
+    const nextPermissions: PermissionsData = {
+      pending: [...filteredPending, { id: myClientId, name: cleanName }],
+      approved: filteredApproved,
+    };
+
+    await savePermissionsToSupabase(activeListToken, nextPermissions);
+    setIsRequestEditModalOpen(false);
+    setRequestNickname("");
+  };
+
+  const handleApproveRequest = async (req: CollaboratorUser) => {
+    if (!isOwnerActive || !activeListToken) return;
+    const nextPending = permissions.pending.filter((u) => u.id !== req.id);
+    const nextApproved = [
+      ...permissions.approved.filter((u) => u.id !== req.id),
+      req,
+    ];
+    const nextPermissions: PermissionsData = {
+      pending: nextPending,
+      approved: nextApproved,
+    };
+    await savePermissionsToSupabase(activeListToken, nextPermissions);
+  };
+
+  const handleRejectRequest = async (reqId: string) => {
+    if (!isOwnerActive || !activeListToken) return;
+    const nextPending = permissions.pending.filter((u) => u.id !== reqId);
+    const nextPermissions: PermissionsData = {
+      pending: nextPending,
+      approved: permissions.approved,
+    };
+    await savePermissionsToSupabase(activeListToken, nextPermissions);
+  };
+
+  const handleRevokeApproved = async (memberId: string) => {
+    if (!isOwnerActive || !activeListToken) return;
+    const nextApproved = permissions.approved.filter(
+      (u) => u.id !== memberId
+    );
+    const nextPermissions: PermissionsData = {
+      pending: permissions.pending,
+      approved: nextApproved,
+    };
+    await savePermissionsToSupabase(activeListToken, nextPermissions);
   };
 
   const handleCreateList = async () => {
@@ -821,7 +987,7 @@ export default function Home() {
   };
 
   const handleScrape = async () => {
-    if (!isOwnerActive) return;
+    if (!canEdit) return;
     if (!inputUrl.trim()) {
       alert("URLを入力してください");
       return;
@@ -947,7 +1113,7 @@ export default function Home() {
   };
 
   const handleOpenManualModal = () => {
-    if (!isOwnerActive) return;
+    if (!canEdit) return;
     let siteName = "";
     try {
       if (inputUrl.trim()) {
@@ -972,7 +1138,7 @@ export default function Home() {
   };
 
   const handleOpenEditModal = (item: WishItem) => {
-    if (!isOwnerActive) return;
+    if (!canEdit) return;
     setIsImageError(false);
     setFormData({
       title: item.title,
@@ -997,7 +1163,7 @@ export default function Home() {
 
   const handleSubmitModal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isOwnerActive) return;
+    if (!canEdit) return;
 
     if (formData.productUrl.trim()) {
       const pUrl = formData.productUrl.trim();
@@ -1218,7 +1384,7 @@ export default function Home() {
   };
 
   const handleTogglePurchased = async (id: string) => {
-    if (!isOwnerActive) return;
+    if (!canEdit) return;
     const target = items.find((i) => i.id === id);
     if (!target) return;
 
@@ -1244,7 +1410,7 @@ export default function Home() {
   };
 
   const handleDeleteItem = async (id: string) => {
-    if (!isOwnerActive) return;
+    if (!canEdit) return;
     if (!confirm("本当にこのアイテムを削除しますか？")) return;
 
     try {
@@ -1299,8 +1465,7 @@ export default function Home() {
 
   const stats = useMemo(() => {
     const validItems = activeItems.filter(
-      (i) =>
-        i.category !== "__LIST_META__" && i.category !== "__list_meta__"
+      (i) => !isMetaCategory(i.category)
     );
     const total = validItems.reduce((sum, item) => sum + (item.price ?? 0), 0);
     const unpurchasedTotal = validItems
@@ -1462,16 +1627,58 @@ export default function Home() {
                   <Sparkles className="w-5 h-5" />
                 </div>
                 <div>
-                  <h1 className="text-lg sm:text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                  <h1 className="text-lg sm:text-xl font-bold tracking-tight text-white flex items-center gap-2 flex-wrap">
                     <span>{currentListName}</span>
                     {isOwnerActive ? (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 font-semibold border border-zinc-700">
-                        Owner
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 font-semibold border border-zinc-700">
+                          Owner
+                        </span>
+                        {permissions.approved.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setIsManageMembersModalOpen(true)}
+                            className="text-xs px-2.5 py-1 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300 transition cursor-pointer flex items-center gap-1.5"
+                            title="共同編集者を管理"
+                          >
+                            <Users className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>共同編集者 ({permissions.approved.length})</span>
+                          </button>
+                        )}
+                      </div>
+                    ) : isApprovedCollaborator ? (
+                      <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-950/60 text-emerald-400 font-semibold border border-emerald-500/30 flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5" />
+                        <span>共同編集</span>
                       </span>
                     ) : (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-800 text-orange-400 font-semibold border border-orange-500/30">
-                        共有リスト
-                      </span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-800 text-orange-400 font-semibold border border-orange-500/30">
+                          共有リスト
+                        </span>
+                        {isPendingCollaborator ? (
+                          <button
+                            type="button"
+                            disabled
+                            className="text-xs px-2.5 py-1 rounded-xl bg-zinc-800/60 text-zinc-500 border border-zinc-700/60 font-medium cursor-not-allowed flex items-center gap-1.5"
+                          >
+                            <Clock className="w-3.5 h-3.5 text-zinc-500" />
+                            <span>承認待ち...</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRequestNickname("");
+                              setIsRequestEditModalOpen(true);
+                            }}
+                            className="text-xs px-2.5 py-1 rounded-xl bg-orange-600/20 hover:bg-orange-600/30 text-orange-400 border border-orange-500/30 font-semibold transition cursor-pointer flex items-center gap-1.5"
+                          >
+                            <UserPlus className="w-3.5 h-3.5" />
+                            <span>編集リクエストを送る</span>
+                          </button>
+                        )}
+                      </div>
                     )}
                   </h1>
                 </div>
@@ -1486,6 +1693,49 @@ export default function Home() {
           </header>
 
           <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-6 w-full flex-1 pb-24 lg:pb-8">
+            {isOwnerActive && permissions.pending.length > 0 && (
+              <div className="flex flex-col gap-2.5">
+                {permissions.pending.map((req) => (
+                  <div
+                    key={req.id}
+                    className="p-4 rounded-2xl bg-orange-950/40 border border-orange-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-xl bg-orange-600 text-white shrink-0">
+                        <Users className="w-4 h-4" />
+                      </div>
+                      <div className="text-sm">
+                        <span className="font-bold text-orange-300">
+                          {req.name}
+                        </span>
+                        <span className="text-zinc-200">
+                          {" "}さんから共同編集のリクエストが届いています
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 self-end sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={() => handleApproveRequest(req)}
+                        className="px-3.5 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-semibold transition cursor-pointer flex items-center gap-1 shadow-sm"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>許可する</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRejectRequest(req.id)}
+                        className="px-3.5 py-1.5 rounded-xl border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-medium transition cursor-pointer flex items-center gap-1"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        <span>拒否する</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {activeItems.length > 0 && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="p-4 sm:p-5 rounded-2xl bg-zinc-900/90 border border-zinc-800/80 shadow-sm flex items-center gap-4">
@@ -1518,7 +1768,7 @@ export default function Home() {
               </div>
             )}
 
-            {isOwnerActive && (
+            {canEdit && (
               <section className="bg-zinc-900/90 border border-zinc-800/80 rounded-3xl p-5 sm:p-6 shadow-sm">
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="text-base font-semibold text-zinc-100">
@@ -1708,7 +1958,7 @@ export default function Home() {
                   </p>
                   <p className="text-xs text-zinc-500 mt-1">
                     {activeItems.length === 0
-                      ? isOwnerActive
+                      ? canEdit
                         ? "上のフォームから商品URLを入力して追加してみましょう。"
                         : "友達がアイテムを追加するのをお待ちください。"
                       : "フィルターやカテゴリの条件を変更してみてください。"}
@@ -1840,7 +2090,7 @@ export default function Home() {
                       </div>
 
                       <div className="p-4 pt-0 mt-auto flex items-center justify-between gap-2 border-t border-zinc-800/80 pt-3">
-                        {isOwnerActive ? (
+                        {canEdit ? (
                           <button
                             type="button"
                             onClick={() => handleTogglePurchased(item.id)}
@@ -1887,7 +2137,7 @@ export default function Home() {
                               )}
                             </button>
                           )}
-                          {isOwnerActive && (
+                          {canEdit && (
                             <button
                               type="button"
                               onClick={() => handleOpenEditModal(item)}
@@ -1909,7 +2159,7 @@ export default function Home() {
                               <ExternalLink className="w-4 h-4" />
                             </a>
                           ) : null}
-                          {isOwnerActive && (
+                          {canEdit && (
                             <button
                               type="button"
                               onClick={() => handleDeleteItem(item.id)}
@@ -2092,6 +2342,126 @@ export default function Home() {
                 className="px-5 py-2 text-xs font-semibold rounded-xl bg-orange-600 hover:bg-orange-700 text-white transition"
               >
                 追加する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isRequestEditModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-sm p-6 shadow-2xl flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-orange-400" />
+                <h3 className="font-bold text-base text-zinc-100">
+                  共同編集のリクエスト
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsRequestEditModalOpen(false)}
+                className="p-1 text-zinc-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              オーナーに表示されるあなたの名前（ニックネーム）を入力してリクエストを送信してください。
+            </p>
+            <input
+              type="text"
+              value={requestNickname}
+              onChange={(e) => setRequestNickname(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleSendEditRequest();
+                }
+              }}
+              placeholder="例: たろう"
+              autoFocus
+              className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-700 bg-zinc-800 text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+            />
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsRequestEditModalOpen(false)}
+                className="px-4 py-2 text-xs font-medium rounded-xl border border-zinc-700 text-zinc-300 hover:bg-zinc-800 transition"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={handleSendEditRequest}
+                className="px-5 py-2 text-xs font-semibold rounded-xl bg-orange-600 hover:bg-orange-700 text-white transition cursor-pointer"
+              >
+                送信する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isManageMembersModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-md p-6 shadow-2xl flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-emerald-400" />
+                <h3 className="font-bold text-base text-zinc-100">
+                  共同編集者の管理
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsManageMembersModalOpen(false)}
+                className="p-1 text-zinc-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              現在このリストの共同編集が許可されているメンバーです。いつでも許可を取り消すことができます。
+            </p>
+            <div className="flex flex-col gap-2 max-h-60 overflow-y-auto">
+              {permissions.approved.length === 0 ? (
+                <p className="text-xs text-zinc-500 py-4 text-center">
+                  現在共同編集者はいません
+                </p>
+              ) : (
+                permissions.approved.map((member) => (
+                  <div
+                    key={member.id}
+                    className="flex items-center justify-between p-3 rounded-2xl bg-zinc-800/60 border border-zinc-700/60"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-full bg-zinc-700 flex items-center justify-center text-xs font-bold text-zinc-200">
+                        {member.name.charAt(0) || "U"}
+                      </div>
+                      <span className="text-sm font-semibold text-zinc-100">
+                        {member.name}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRevokeApproved(member.id)}
+                      className="text-xs px-3 py-1.5 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 font-medium transition cursor-pointer flex items-center gap-1"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>許可を取り消す</span>
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setIsManageMembersModalOpen(false)}
+                className="px-4 py-2 text-xs font-medium rounded-xl border border-zinc-700 text-zinc-300 hover:bg-zinc-800 transition cursor-pointer"
+              >
+                閉じる
               </button>
             </div>
           </div>

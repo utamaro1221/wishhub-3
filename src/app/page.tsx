@@ -26,6 +26,7 @@ import {
   ChevronRight,
   Share2,
   Layers,
+  User,
   Users,
   UserPlus,
   Clock,
@@ -74,6 +75,7 @@ interface CollaboratorUser {
 interface PermissionsData {
   pending: CollaboratorUser[];
   approved: CollaboratorUser[];
+  creators?: Record<string, string>;
 }
 
 type FilterType = "all" | "unpurchased" | "purchased";
@@ -86,6 +88,7 @@ const STORAGE_KEY_TOKEN = "wishhub_my_list_token";
 const STORAGE_KEY_NAME = "wishhub_my_list_name";
 const STORAGE_KEY_JOINED = "wishhub_joined_lists";
 const STORAGE_KEY_CLIENT_ID = "wishhub_client_id";
+const STORAGE_KEY_NICKNAME = "wishhub_nickname";
 
 function isMetaCategory(category?: string | null): boolean {
   if (!category) return false;
@@ -228,6 +231,7 @@ export default function Home() {
   const [permissions, setPermissions] = useState<PermissionsData>({
     pending: [],
     approved: [],
+    creators: {},
   });
   const [isRequestEditModalOpen, setIsRequestEditModalOpen] = useState(false);
   const [requestNickname, setRequestNickname] = useState("");
@@ -387,7 +391,11 @@ export default function Home() {
 
       if (data) {
         const metaMap = new Map<string, string>();
-        let foundPerms: PermissionsData = { pending: [], approved: [] };
+        let foundPerms: PermissionsData = {
+          pending: [],
+          approved: [],
+          creators: {},
+        };
         data.forEach((d: any) => {
           if (
             (d.category === "__LIST_META__" || d.category === "__list_meta__") &&
@@ -406,6 +414,10 @@ export default function Home() {
               foundPerms = {
                 pending: Array.isArray(parsed.pending) ? parsed.pending : [],
                 approved: Array.isArray(parsed.approved) ? parsed.approved : [],
+                creators:
+                  parsed.creators && typeof parsed.creators === "object"
+                    ? parsed.creators
+                    : {},
               };
             } catch {}
           }
@@ -684,6 +696,19 @@ export default function Home() {
 
   const currentListName = activeList?.name || "マイリスト";
 
+  const currentActorName = useMemo(() => {
+    if (isOwnerActive) {
+      return currentListName || "オーナー";
+    }
+    const matched = permissions.approved.find((u) => u.id === myClientId);
+    if (matched?.name) return matched.name;
+    const localStored =
+      typeof window !== "undefined"
+        ? localStorage.getItem(STORAGE_KEY_NICKNAME)
+        : null;
+    return localStored || "共同編集者";
+  }, [isOwnerActive, currentListName, permissions.approved, myClientId]);
+
   const activeItems = useMemo(() => {
     const currentToken = activeListToken || lists[0]?.token || "";
     return items.filter(
@@ -694,7 +719,7 @@ export default function Home() {
 
   const handleSelectList = (targetToken: string) => {
     setActiveListToken(targetToken);
-    setPermissions({ pending: [], approved: [] });
+    setPermissions({ pending: [], approved: [], creators: {} });
     setMobileTab("list");
     const target = lists.find((l) => l.token === targetToken);
     if (target) {
@@ -708,8 +733,16 @@ export default function Home() {
   };
 
   const handleSendEditRequest = async () => {
-    const cleanName = sanitizeInputText(requestNickname, 50).trim();
-    if (!cleanName || !myClientId || !activeListToken) return;
+    const cleanName = sanitizeInputText(requestNickname, 20).trim();
+    if (!cleanName) {
+      alert("名前（ニックネーム）を入力してください");
+      return;
+    }
+    if (!myClientId || !activeListToken) return;
+
+    try {
+      localStorage.setItem(STORAGE_KEY_NICKNAME, cleanName);
+    } catch {}
 
     const filteredPending = permissions.pending.filter(
       (u) => u.id !== myClientId
@@ -718,6 +751,7 @@ export default function Home() {
       (u) => u.id !== myClientId
     );
     const nextPermissions: PermissionsData = {
+      ...permissions,
       pending: [...filteredPending, { id: myClientId, name: cleanName }],
       approved: filteredApproved,
     };
@@ -735,6 +769,7 @@ export default function Home() {
       req,
     ];
     const nextPermissions: PermissionsData = {
+      ...permissions,
       pending: nextPending,
       approved: nextApproved,
     };
@@ -745,6 +780,7 @@ export default function Home() {
     if (!isOwnerActive || !activeListToken) return;
     const nextPending = permissions.pending.filter((u) => u.id !== reqId);
     const nextPermissions: PermissionsData = {
+      ...permissions,
       pending: nextPending,
       approved: permissions.approved,
     };
@@ -757,6 +793,7 @@ export default function Home() {
       (u) => u.id !== memberId
     );
     const nextPermissions: PermissionsData = {
+      ...permissions,
       pending: permissions.pending,
       approved: nextApproved,
     };
@@ -1300,6 +1337,8 @@ export default function Home() {
         is_purchased: false,
       };
 
+      let addedItemId = "";
+
       try {
         const { data, error } = await supabase
           .from("wish_items")
@@ -1323,6 +1362,7 @@ export default function Home() {
             isPurchased: false,
             reactions: 0,
           };
+          addedItemId = fallbackItem.id;
           setItems((prev) => [fallbackItem, ...prev]);
         } else if (data) {
           const savedItem: WishItem = {
@@ -1342,6 +1382,7 @@ export default function Home() {
             isPurchased: Boolean(data.is_purchased),
             reactions: data.reactions || 0,
           };
+          addedItemId = savedItem.id;
           setItems((prev) => [savedItem, ...prev]);
         }
       } catch (err) {
@@ -1360,7 +1401,20 @@ export default function Home() {
           isPurchased: false,
           reactions: 0,
         };
+        addedItemId = fallbackItem.id;
         setItems((prev) => [fallbackItem, ...prev]);
+      }
+
+      if (addedItemId) {
+        const nextCreators = {
+          ...(permissions.creators || {}),
+          [addedItemId]: currentActorName,
+        };
+        const nextPermissions: PermissionsData = {
+          ...permissions,
+          creators: nextCreators,
+        };
+        savePermissionsToSupabase(currentToken, nextPermissions);
       }
 
       setLists((prev) => {
@@ -1420,6 +1474,16 @@ export default function Home() {
       }
     } catch (err) {
       console.error("削除例外:", err);
+    }
+
+    if (permissions.creators?.[id]) {
+      const nextCreators = { ...permissions.creators };
+      delete nextCreators[id];
+      const nextPermissions: PermissionsData = {
+        ...permissions,
+        creators: nextCreators,
+      };
+      savePermissionsToSupabase(activeListToken, nextPermissions);
     }
 
     setItems((prev) => prev.filter((item) => item.id !== id));
@@ -1653,26 +1717,30 @@ export default function Home() {
                       </span>
                     ) : (
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-800 text-orange-400 font-semibold border border-orange-500/30">
+                        <span className="text-xs px-2.5 py-0.5 rounded-full bg-zinc-800 text-orange-400 font-semibold border border-orange-500/30">
                           共有リスト
                         </span>
                         {isPendingCollaborator ? (
                           <button
                             type="button"
                             disabled
-                            className="text-xs px-2.5 py-1 rounded-xl bg-zinc-800/60 text-zinc-500 border border-zinc-700/60 font-medium cursor-not-allowed flex items-center gap-1.5"
+                            className="text-xs px-3 py-1 rounded-xl bg-zinc-800/80 text-zinc-400 border border-zinc-700/60 font-medium cursor-not-allowed flex items-center gap-1.5 shadow-sm"
                           >
-                            <Clock className="w-3.5 h-3.5 text-zinc-500" />
+                            <Clock className="w-3.5 h-3.5 text-orange-400 animate-pulse" />
                             <span>承認待ち...</span>
                           </button>
                         ) : (
                           <button
                             type="button"
                             onClick={() => {
-                              setRequestNickname("");
+                              const savedName =
+                                typeof window !== "undefined"
+                                  ? localStorage.getItem(STORAGE_KEY_NICKNAME) || ""
+                                  : "";
+                              setRequestNickname(savedName);
                               setIsRequestEditModalOpen(true);
                             }}
-                            className="text-xs px-2.5 py-1 rounded-xl bg-orange-600/20 hover:bg-orange-600/30 text-orange-400 border border-orange-500/30 font-semibold transition cursor-pointer flex items-center gap-1.5"
+                            className="text-xs px-3 py-1 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-md shadow-orange-950/50 hover:scale-[1.02] active:scale-[0.98]"
                           >
                             <UserPlus className="w-3.5 h-3.5" />
                             <span>編集リクエストを送る</span>
@@ -1950,7 +2018,7 @@ export default function Home() {
               </div>
 
               {displayedItems.length === 0 ? (
-                <div className="text-center py-16 px-4 border border-dashed border-zinc-800 rounded-3xl bg-zinc-900/30">
+                <div className="text-center py-16 px-4 border border-dashed border-zinc-800 rounded-3xl bg-zinc-900/30 flex flex-col items-center justify-center">
                   <p className="text-zinc-400 font-medium">
                     {activeItems.length === 0
                       ? "まだ登録されたアイテムがありません。"
@@ -1963,11 +2031,40 @@ export default function Home() {
                         : "友達がアイテムを追加するのをお待ちください。"
                       : "フィルターやカテゴリの条件を変更してみてください。"}
                   </p>
+                  {!canEdit && (
+                    <div className="mt-5 flex justify-center">
+                      {isPendingCollaborator ? (
+                        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-400 text-xs font-medium">
+                          <Clock className="w-4 h-4 text-orange-400 animate-pulse" />
+                          <span>オーナーに共同編集リクエストを送信済みです（承認待ち）</span>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const savedName =
+                              typeof window !== "undefined"
+                                ? localStorage.getItem(STORAGE_KEY_NICKNAME) || ""
+                                : "";
+                            setRequestNickname(savedName);
+                            setIsRequestEditModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold shadow-lg shadow-orange-950/50 transition cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                        >
+                          <UserPlus className="w-4 h-4" />
+                          <span>共同編集のリクエストを送る</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {displayedItems.map((item) => (
-                    <div
+                  {displayedItems.map((item) => {
+                    const creatorName =
+                      permissions.creators?.[item.id] || currentListName;
+                    return (
+                      <div
                       key={item.id}
                       className={`group relative flex flex-col justify-between bg-zinc-900/90 border rounded-3xl overflow-hidden transition-all duration-200 hover:shadow-lg ${
                         item.isPurchased
@@ -2053,15 +2150,28 @@ export default function Home() {
                                 />
                               ))}
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => handleAddReactionToItem(item.id)}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-medium transition cursor-pointer"
-                              title="いいね！"
-                            >
-                              <Smile className="w-3.5 h-3.5 text-orange-400" />
-                              <span>{item.reactions || 0}</span>
-                            </button>
+                            <div className="flex items-center gap-2">
+                              {creatorName && (
+                                <span
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 text-[11px] font-medium border border-zinc-700/60"
+                                  title={`追加: ${creatorName}`}
+                                >
+                                  <User className="w-3 h-3 text-orange-400" />
+                                  <span className="max-w-[100px] truncate">
+                                    追加: {creatorName}
+                                  </span>
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleAddReactionToItem(item.id)}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-medium transition cursor-pointer"
+                                title="いいね！"
+                              >
+                                <Smile className="w-3.5 h-3.5 text-orange-400" />
+                                <span>{item.reactions || 0}</span>
+                              </button>
+                            </div>
                           </div>
 
                           <h3
@@ -2172,8 +2282,9 @@ export default function Home() {
                         </div>
                       </div>
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
+              </div>
               )}
             </section>
           </main>
@@ -2367,22 +2478,31 @@ export default function Home() {
               </button>
             </div>
             <p className="text-xs text-zinc-400 leading-relaxed">
-              オーナーに表示されるあなたの名前（ニックネーム）を入力してリクエストを送信してください。
+              オーナー（{currentListName}）に共同編集の申請を送信します。表示される名前（ニックネーム）を入力してください。
             </p>
-            <input
-              type="text"
-              value={requestNickname}
-              onChange={(e) => setRequestNickname(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleSendEditRequest();
-                }
-              }}
-              placeholder="例: たろう"
-              autoFocus
-              className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-700 bg-zinc-800 text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-            />
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-zinc-300">
+                あなたの名前 / ニックネーム <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={requestNickname}
+                maxLength={20}
+                onChange={(e) => setRequestNickname(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleSendEditRequest();
+                  }
+                }}
+                placeholder="例: たなか"
+                autoFocus
+                className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-700 bg-zinc-800 text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+              />
+              <span className="text-[10px] text-zinc-500 text-right">
+                {requestNickname.length}/20文字
+              </span>
+            </div>
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
